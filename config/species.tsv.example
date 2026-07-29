@@ -1,0 +1,14 @@
+# Multi-species manifest. Copy to config/species.tsv to enable multi-species mode:
+#   gwiscan run           # runs every species below as an independent parallel job
+# Each species writes into its own results/<Prefix>/; the prefix also prefixes
+# the systematic domain ids (e.g. AthGNA001.1). Proteome paths are relative to the
+# project directory (or absolute). Throttle concurrency with SPECIES_PARALLEL.
+#
+# Annotation is optional: that species' REPRESENTATIVE GTF/GFF3 -- the same
+# one-transcript-per-gene set its proteome comes from -- giving every member its
+# chromosome, start, end and strand for the chromosomal distribution figure. Leave
+# the cell empty for a species whose annotation you do not have; that species is
+# still analysed, only without chromosomal coordinates.
+Prefix	Proteome	Annotation
+Ath	genomes/Athaliana.fasta	genomes/Athaliana.gtf
+Gma	genomes/Gmax.fasta	genomes/Gmax.gtf

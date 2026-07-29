@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+*.egg
+
+# Test and lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Run outputs (created in each project folder)
+intermediate/
+final_results/
+results/
+logs/
+
+# Databases downloaded or built by setup-db
+db/hmm/
+db/blast/
+db/go/
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store

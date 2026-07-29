@@ -1,0 +1,146 @@
+============================================================================
+GWIscan - PROJECT DIRECTORY LAYOUT
+============================================================================
+
+GWIscan runs against a PROJECT DIRECTORY (set with -C / --workdir; default: the
+current directory). All inputs, config, and reference databases live under it;
+results and logs are written under it too, or to a separate directory given with
+-o / --output.
+
+
+REQUIRED EXTERNAL TOOLS  (install system-wide, on PATH)
+----------------------------------------------------------------------------
+
+Install these system-wide so they resolve by name - no directory has to be given.
+Most are on bioconda:
+
+  DIAMOND          diamond                        conda install bioconda::diamond
+  HMMER            hmmscan, hmmpress, hmmfetch    conda install bioconda::hmmer
+  seqkit           seqkit                         conda install bioconda::seqkit
+  MAFFT            mafft                          conda install bioconda::mafft
+  IQ-TREE          iqtree                         conda install bioconda::iqtree
+  MEME Suite       meme                           conda install bioconda::meme  (see note)
+  InterProScan     interproscan.sh   (local mode only; api mode uses the EBI service)
+
+  MEME note: the MEME install puts binaries in two folders, so add BOTH to PATH -
+    export PATH=$HOME/meme/bin:$HOME/meme/libexec/meme-<version>:$PATH
+  so that "meme" resolves by name.
+
+Optional stages (warn if absent): WebLogo, MEME, IQ-TREE, biolib (DeepTMHMM).
+
+TargetP and DeepLoc are academic downloads: give a PATH name if installed
+system-wide, or a full path (TARGETP_BIN / DEEPLOC_BIN) otherwise.
+
+
+DIRECTORY TREE
+----------------------------------------------------------------------------
+
+  /data/myproject/                 project directory  (-C / --workdir)
+  |
+  |-- config.yaml                  settings: MODE, THREADS, EBI_EMAIL, OUTPUT ...
+  |                                (sits at the root, not inside config/)
+  |-- config/
+  |     |-- family.tsv             family table, MODE: family
+  |     |     (or) superfamily.tsv family table, MODE: superfamily
+  |     |-- species.tsv            species manifest (multi-species runs only)
+  |
+  |-- input/
+  |     |-- proteome.fasta         single-species input proteome
+  |
+  |-- db/
+  |     |-- hmm/                   custom HMMs you provide; Pfam-accession HMMs
+  |     |                          download into this folder
+  |     |-- blast/                 BlastModel reference FASTAs (e.g. AAA33346.1.fasta)
+  |
+  |-- final_results/               THE deliverables: final TSV/XLSX, members GFF3,
+  |                                provenance (top level, or sent to -o/--output)
+  |-- intermediate/                every stage's working files (or sent to -o/--output)
+  |-- logs/                        per-stage logs     (or sent to -o/--output)
+
+
+WHAT GOES WHERE
+----------------------------------------------------------------------------
+
+  config.yaml            Run settings. Sits at the project ROOT, not in config/.
+
+  config/family.tsv      Family table for FAMILY mode: a flat list of families.
+                         Use with  MODE: family.
+
+  config/superfamily.tsv Family table for SUPERFAMILY mode: adds a leading
+                         Superfamily column and a superfamily rollup.
+                         Use with  MODE: superfamily.
+
+  config/species.tsv     Species manifest (Prefix, Proteome). Multi-species runs
+                         only; its presence switches "run" to multi-species mode.
+
+  input/proteome.fasta   The input proteome for a single-species run.
+
+  db/blast/              BlastModel reference FASTAs. Required for EVERY family,
+                         since the DIAMOND search runs for all families.
+
+  db/hmm/                HMM profiles. Custom HMMs you place here; Pfam-accession
+                         HMMs are fetched into this folder on first setup-db, and
+                         a file already present is reused (offline / pinned runs).
+
+  final_results/         THE deliverables (final TSV/XLSX, members GFF3,
+                         provenance) at the TOP level, so the main output isn't
+                         buried. A sibling of intermediate/, not nested in it.
+
+  intermediate/  logs/   Working files + per-stage logs. Written under the project
+                         directory, or under the directory given with -o / --output.
+
+
+RULES
+----------------------------------------------------------------------------
+
+  1. The family table filename follows MODE. Provide ONE:
+       config/family.tsv        with  MODE: family
+       config/superfamily.tsv   with  MODE: superfamily
+     The MODE in config.yaml and the file you provide must agree - superfamily
+     mode needs the Superfamily column. Copy the matching *.tsv.example and edit.
+
+  2. db/blast/ needs one FASTA per family - the BlastModel query for the DIAMOND
+     search, which runs for every family.
+
+  3. db/hmm/ holds custom HMMs; Pfam-accession HMMs download there automatically,
+     and an existing file there is reused.
+
+  4. config.yaml sits at the project root, not inside config/.
+
+
+SINGLE-SPECIES RUN
+----------------------------------------------------------------------------
+
+  gwiscan run -C /data/myproject --threads 8 --ebi-email you@example.com
+
+  Uses input/proteome.fasta and config/family.tsv (or superfamily.tsv).
+  Deliverables go to /data/myproject/final_results/; working files to
+  /data/myproject/intermediate/.
+
+
+MULTI-SPECIES RUN
+----------------------------------------------------------------------------
+
+  Add config/species.tsv (one row per species):
+
+      Prefix   Proteome
+      Ath      genomes/Athaliana.fasta
+      Gma      genomes/Gmax.fasta
+
+  Then:
+
+  gwiscan run -C /data/myproject --threads 8 --ebi-email you@example.com
+
+  Each species runs as an independent parallel job into its own namespace:
+  deliverables in final_results/<Prefix>/, working files in intermediate/<Prefix>/.
+  Proteome paths come from species.tsv (relative to the project directory, or
+  absolute).
+
+
+SEND OUTPUTS TO A SEPARATE DIRECTORY
+----------------------------------------------------------------------------
+
+  gwiscan run -C /data/myproject -o /scratch/gwiscan_out ...
+
+  final_results/, intermediate/ and logs/ are written under /scratch/gwiscan_out;
+  inputs, config, and db/ are still read from the project directory.

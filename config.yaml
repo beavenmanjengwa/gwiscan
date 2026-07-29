@@ -1,0 +1,27 @@
+THREADS: 4
+OUTPUT: ""                     # where results/ and logs/ go; empty = the project dir (-C). CLI: -o/--output
+MODE: family                   # "family" (flat) or "superfamily" (adds a Superfamily rollup; family map needs a Superfamily column)
+SPECIES_PARALLEL: 0            # multi-species: concurrent species. 0 = auto (cores // THREADS); N = exactly N at once
+DIAMOND_EVALUE: "1e-5"
+DIAMOND_IDENTITY: 30           # round 2 min % identity (native seeds); round 1 is --very-sensitive, E-value only
+DIAMOND_COVERAGE_R2: 70        # round 2 query coverage % (native seeds)
+DIAMOND_SENSITIVE_R2: false    # round 2 --sensitive; default off (native-to-native)
+DIAMOND_BSR: 0.4               # round-2 seeds for no-HMM families: Blast Score Ratio cutoff (HMM families use hmmscan-validated seeds)
+CONCORDANCE_MIN: 0.7           # score stage: Jaccard at/above which a family is "concordant" (hmmscan vs independent DIAMOND round 1)
+PRIMARY_TRANSCRIPT: true       # input proteome is one protein per gene; false only if it still has isoforms
+EBI_EMAIL: ""                  # REQUIRED — InterProScan always runs; set here or export EBI_EMAIL
+INTERPRO_APPL: "Pfam,CDD,PROSITE-profiles"  # InterProScan member db(s); Pfam drives architecture, CDD+PROSITE enrich
+INTERPRO_MODE: "api"           # "api" (EBI REST, needs EBI_EMAIL) or "local" (installed interproscan.sh)
+INTERPROSCAN_BIN: "interproscan.sh"  # local mode: install InterProScan system-wide (on PATH) so this name resolves; full path only for a non-PATH install
+INTERPRO_LOOKUP: false         # local mode: use the online precalc lookup; false = fully offline (-dp)
+PROTPARAM_FORMATS: [tsv, xlsx] # ProtParam outputs; any of tsv, xlsx, csv (tsv feeds the join)
+SPECIES_PREFIX: ""             # e.g. "Ath" — prefixes systematic domain ids (AthGNA001.1)
+TARGETP_BIN: "targetp-2.0"     # PATH name, path to executable, or install dir (uses <dir>/bin/targetp); academic download
+TARGETP_ORGANISM: "pl"         # plant; -org pl / -format short are fixed defaults for this pipeline
+DEEPLOC_BIN: "deeploc-2.1"     # PATH name or absolute path; DeepLoc 2.1 is a user-installed academic download
+DEEPLOC_MODEL: "Accurate"      # Accurate (ProtT5, ~32GB RAM) or Fast (ESM1b, lighter)
+DEEPTMHMM_VERSION: "1.0.24"    # 1.0.24 runs locally & fast; newer tags queue on biolib cloud
+IQTREE_BIN: "iqtree"          # per-family ML trees; install: conda install bioconda::iqtree (on PATH)
+IQTREE_MODEL: "MFP"            # ModelFinder Plus (auto model selection)
+IQTREE_BOOTSTRAP: 1000         # ultrafast bootstrap replicates (-B); 0 = no bootstrap
+IQTREE_SEED: 12345             # RNG seed (-seed) so trees/support values are reproducible

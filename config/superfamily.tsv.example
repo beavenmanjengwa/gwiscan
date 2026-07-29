@@ -1,0 +1,44 @@
+# ============================================================================
+# GWIscan family table — SUPERFAMILY mode (families grouped under a superfamily)
+# ============================================================================
+# Copy this file to  config/superfamily.tsv  and edit it for your study families,
+# and set  MODE: superfamily  in config.yaml.
+#
+# Superfamily mode adds a superfamily rollup on top of the per-family results
+# (e.g. Lectin over GNA, Legume, CRA). Every processing step matches family mode;
+# the leading Superfamily column drives the rollup.
+#
+# One row per family. TAB-separated. Whole-line '#' comments and blank lines are
+# ignored (put each comment on its own line beginning with '#').
+#
+# COLUMNS  (family-mode columns, with a leading Superfamily column)
+#   Superfamily The grouping label this family rolls up into. Required in this
+#               mode; families sharing a value are reported together.
+#
+#   Family      Study family name. Used verbatim in outputs and domain ids
+#               (e.g. GNA -> AthGNA001.1). Required and unique.
+#
+#   PfamModel   How the family is identified and confirmed — one of:
+#                 PFxxxxx   Pfam accession: hmmscan + DIAMOND, then confirmed by
+#                           InterProScan reporting that Pfam. Use only for a Pfam
+#                           specific to the family.
+#                 name.hmm  custom family-specific HMM in db/hmm/: hmmscan (this
+#                           HMM) + DIAMOND, merged, NO InterProScan; its own
+#                           hmmscan hit gives the coordinates. Its NAME line must
+#                           equal the Family. Use when the family's Pfam is a
+#                           shared/ancestral domain, not specific to the family.
+#                 -         no HMM: DIAMOND only, merged, no InterProScan.
+#
+#   BlastModel  Reference protein FASTA (in db/blast/) used as the DIAMOND round-1
+#               query. DIAMOND runs for every family, so this is required for all.
+#
+# Rule: InterProScan runs ONLY for families whose PfamModel is a Pfam accession.
+# ----------------------------------------------------------------------------
+Superfamily	Family	PfamModel	BlastModel
+# specific Pfam -> hmmscan + DIAMOND, InterProScan-confirmed:
+Lectin	GNA	PF01453	AAA33346.1.fasta
+Lectin	Legume	PF00139	AAA33983.1.fasta
+# custom curated HMM (in db/hmm/CRA.hmm) -> hmmscan + DIAMOND, merged, no InterProScan:
+Lectin	CRA	CRA.hmm	ABL98074.1.fasta
+# no HMM -> DIAMOND only, merged, no InterProScan:
+Lectin	EUL	-	ABW73993.1.fasta

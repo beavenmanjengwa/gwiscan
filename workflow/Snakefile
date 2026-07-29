@@ -1,0 +1,203 @@
+"""GWIscan — Snakemake orchestration (thin wrapper over the CLI).
+
+Each rule declares the inputs/outputs the corresponding `gwiscan` subcommand
+reads/writes, so Snakemake provides the DAG: resume from the last successful
+stage, run independent branches in parallel (search-hmm ∥ search-diamond; the
+four annotators ∥), and support --until / -R / -n. All parameters live in
+config.yaml, which the CLI reads directly.
+
+Run from the project directory:
+    snakemake -s workflow/Snakefile --cores 8
+    snakemake -s workflow/Snakefile --cores 8 -n            # dry run
+    snakemake -s workflow/Snakefile --cores 8 --until compile
+"""
+
+configfile: "config.yaml"
+
+THREADS = config.get("THREADS", 4)
+
+# Family table filename follows MODE: superfamily.tsv (superfamily mode) or family.tsv.
+MODE = str(config.get("MODE", "family")).lower()
+FAMILY_TABLE = "config/superfamily.tsv" if MODE == "superfamily" else "config/family.tsv"
+
+FINAL_TARGETS = [
+    "final_results/gwiscan_results.tsv",
+    "final_results/gwiscan_results.xlsx",
+    "final_results/provenance.txt",
+    "intermediate/family_detectability.tsv",
+    "intermediate/.weblogo.done",
+    "intermediate/.meme.done",
+    "intermediate/.iqtree.done",
+]
+
+rule all:
+    input: FINAL_TARGETS
+
+rule preflight:
+    output: touch("logs/.preflight.done")
+    shell: "gwiscan preflight"
+
+rule setup_db:
+    input:
+        flag     = "logs/.preflight.done",
+        map      = FAMILY_TABLE,
+        proteome = "input/proteome.fasta"     # proteome db is built here
+    output:
+        hmm_db     = "db/hmm/all_models.hmm",
+        proteome_db = "db/blast/proteome_db.dmnd",
+        flag       = touch("db/.db_setup.done")
+    shell: "gwiscan setup-db --threads {THREADS}"
+
+rule search_hmm:
+    input:
+        hmm_db   = "db/hmm/all_models.hmm",
+        proteome = "input/proteome.fasta"
+    output: "intermediate/hmm_hits.tsv", "intermediate/hmm_domtbl.txt"
+    threads: THREADS
+    shell: "gwiscan search-hmm --threads {threads}"
+
+rule search_diamond:
+    input:
+        flag     = "db/.db_setup.done",
+        proteome = "input/proteome.fasta"
+    output: "intermediate/blast_hits.tsv"
+    threads: THREADS
+    shell: "gwiscan search-diamond --threads {threads}"
+
+rule merge:
+    input:
+        hmm   = "intermediate/hmm_hits.tsv",
+        blast = "intermediate/blast_hits.tsv"
+    output: "intermediate/candidates_merged.tsv", "intermediate/candidates.fasta"
+    shell: "gwiscan merge"
+
+# Detectability profiles each family from the two independent searches
+# (hmmscan vs DIAMOND round 1) — a report, so it is a final target.
+rule score:
+    input:
+        hmm   = "intermediate/hmm_hits.tsv",
+        blast = "intermediate/blast_hits.tsv",
+        map   = FAMILY_TABLE
+    output: "intermediate/family_detectability.tsv"
+    shell: "gwiscan score"
+
+# InterProScan gates the initial candidates into the confirmed FINAL set; the
+# per-candidate annotators run only on final_candidates.fasta.
+rule interpro:
+    input: "intermediate/candidates.fasta"
+    output:
+        "intermediate/interproscan.tsv",
+        "intermediate/interproscan.gff3"
+    shell: "gwiscan interpro"
+
+rule confirm:
+    input:
+        merged   = "intermediate/candidates_merged.tsv",
+        interpro = "intermediate/interproscan.tsv",
+        map      = FAMILY_TABLE,
+        fasta    = "intermediate/candidates.fasta"
+    output:
+        "intermediate/final_candidates.tsv",
+        "intermediate/final_candidates.fasta"
+    shell: "gwiscan confirm"
+
+rule protparam:
+    input: "intermediate/final_candidates.fasta"
+    output: "intermediate/protparam.tsv"
+    shell: "gwiscan protparam"
+
+rule targetp:
+    input: "intermediate/final_candidates.fasta"
+    output: "intermediate/targetp.tsv"
+    shell: "gwiscan targetp"
+
+rule deeptmhmm:
+    input: "intermediate/final_candidates.fasta"
+    output: "intermediate/deeptmhmm.tsv"
+    shell: "gwiscan deeptmhmm"
+
+rule deeploc:
+    input: "intermediate/final_candidates.fasta"
+    output: "intermediate/deeploc.tsv"
+    shell: "gwiscan deeploc"
+
+# Chromosomal coordinates come from the species' representative GTF/GFF3; the
+# rule is skipped by the CLI when no annotation is configured.
+rule coords:
+    input: "intermediate/final_candidates.tsv"
+    output: "intermediate/chromosome_map.tsv"
+    shell: "gwiscan coords"
+
+rule compile:
+    input:
+        "intermediate/final_candidates.tsv",
+        "intermediate/protparam.tsv",
+        "intermediate/targetp.tsv",
+        "intermediate/deeptmhmm.tsv",
+        "intermediate/deeploc.tsv",
+        "intermediate/interproscan.tsv"
+    output:
+        "final_results/gwiscan_results.tsv",
+        "final_results/gwiscan_results.xlsx"
+    shell: "gwiscan compile"
+
+rule domain_bed:
+    input:
+        merged   = "intermediate/candidates_merged.tsv",
+        interpro = "intermediate/interproscan.tsv",
+        map      = FAMILY_TABLE
+    output: "intermediate/domains.bed"
+    shell: "gwiscan domain-bed"
+
+rule extract_domains:
+    input:
+        bed        = "intermediate/domains.bed",
+        candidates = "intermediate/candidates.fasta"
+    output: "intermediate/domain_sequences/domain_map.tsv"
+    shell: "gwiscan extract-domains"
+
+rule extract_mature:
+    input:
+        targetp = "intermediate/targetp.tsv",
+        final   = "intermediate/final_candidates.tsv"
+    output: touch("intermediate/.mature.done")
+    shell: "gwiscan extract-mature"
+
+# MAFFT aligns both tracks: extracted domains and TargetP mature sequences.
+rule msa:
+    input:
+        domains = "intermediate/domain_sequences/domain_map.tsv",
+        mature  = "intermediate/.mature.done"
+    output: touch("intermediate/.mafft.done")
+    threads: THREADS
+    shell: "gwiscan msa --threads {threads}"
+
+# trimAl cleans each MAFFT alignment before tree-building; only IQ-TREE consumes
+# the trimmed output (WebLogo/MEME keep the full alignment).
+rule trim:
+    input: "intermediate/.mafft.done"
+    output: touch("intermediate/.trimal.done")
+    shell: "gwiscan trim"
+
+rule weblogo:
+    input: "intermediate/.mafft.done"
+    output: touch("intermediate/.weblogo.done")
+    shell: "gwiscan weblogo"
+
+# MEME runs off the same per-family domain FASTAs as msa/weblogo (parallel branch).
+rule meme:
+    input: "intermediate/domain_sequences/domain_map.tsv"
+    output: touch("intermediate/.meme.done")
+    shell: "gwiscan meme"
+
+# IQ-TREE builds a per-family ML tree from each (trimmed) alignment.
+rule iqtree:
+    input: "intermediate/.trimal.done"
+    output: touch("intermediate/.iqtree.done")
+    threads: THREADS
+    shell: "gwiscan iqtree --threads {threads}"
+
+rule provenance:
+    input: "final_results/gwiscan_results.tsv", "intermediate/.weblogo.done"
+    output: "final_results/provenance.txt"
+    shell: "gwiscan provenance"

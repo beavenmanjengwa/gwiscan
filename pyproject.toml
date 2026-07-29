@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gwiscan"
+version = "1.0.0"
+description = "GWIscan (Genome-Wide Identification Scan) identifies and annotates members of one or more gene families and/or superfamilies across the proteomes of one or more species."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Beaven Manjengwa" }]
+keywords = ["bioinformatics", "gene-family", "hmmer", "diamond", "interproscan", "annotation", "proteome"]
+
+dependencies = [
+    "biopython>=1.80",
+    "pandas>=1.5",
+    "openpyxl>=3.1",
+    "requests>=2.28",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# WebLogo is optional: only the `weblogo` step needs it, and it pulls in
+# a heavier dependency tree than the core annotation steps.
+logos = ["weblogo>=3.7"]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+gwiscan = "gwiscan.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
