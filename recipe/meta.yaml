@@ -9,7 +9,7 @@ source:
   # Point at the GitHub release tarball once you tag v{{ version }} and fill in the
   # sha256 (get it with:  curl -sL <url> | sha256sum ).
   url: https://github.com/beavenmanjengwa/gwiscan/archive/refs/tags/v{{ version }}.tar.gz
-  sha256: 0000000000000000000000000000000000000000000000000000000000000000
+  sha256: 6fa6365b8e8d6ee8e1f1727ce74c7fdd114bd510f5ebede71f73a1f44e2e42b1
 
 build:
   number: 0
