@@ -31,9 +31,9 @@ InterProScan and set `INTERPRO_MODE: local` and `INTERPROSCAN_BIN`.
 [TargetP 2.0](https://services.healthtech.dtu.dk/services/TargetP-2.0/) and
 [DeepLoc 2.1](https://services.healthtech.dtu.dk/services/DeepLoc-2.1/) should be
 installed manually, as they need an academic license from DTU. Install each one
-(its own conda environment is easiest) and tell gwiscan where it is with
-`TARGETP_BIN` and `DEEPLOC_BIN` (in the config file, an env var, or
-`--targetp-bin` / `--deeploc-bin`). Any path works.
+(its own conda environment is easiest) and add its path to `TARGETP_BIN` and
+`DEEPLOC_BIN` (in the config file, an env var, or `--targetp-bin` /
+`--deeploc-bin`). Any path works.
 
 Before a long run, check the tools, packages, and inputs with:
 
