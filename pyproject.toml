@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gwiscan"
 version = "1.0.0"
-description = "GWIscan (Genome-Wide Identification Scan) identifies and annotates members of one or more gene families and/or superfamilies across the proteomes of one or more species."
+description = "Genome-wide identification and annotation of gene families or superfamilies"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }

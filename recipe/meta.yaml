@@ -51,14 +51,14 @@ about:
   home: https://github.com/beavenmanjengwa/gwiscan
   license: MIT
   license_file: LICENSE
-  summary: Genome-wide identification and annotation of gene families in proteomes
+  summary: Genome-wide identification and annotation of gene families or superfamilies
   description: |
-    GWIscan finds and annotates members of one or more gene families and/or
-    superfamilies across the proteomes of one or more species. It runs DIAMOND
-    and HMMER searches, checks candidates with InterProScan, and annotates them
-    with physicochemical properties, signal and transit peptides, transmembrane
-    topology, subcellular localization, and domain and GO terms. It then aligns
-    each family and builds conservation logos, MEME motifs, and IQ-TREE trees.
+    GWIscan identifies and annotates gene families or superfamilies. It runs
+    DIAMOND and HMMER searches, checks candidates with InterProScan, and
+    annotates them with physicochemical properties, signal and transit peptides,
+    transmembrane topology, subcellular localization, and domain and GO terms.
+    It then aligns each family and builds conservation logos, MEME motifs, and
+    IQ-TREE trees.
 
     Some tools are not installed by conda. DeepTMHMM is enabled with
     "pip install pybiolib". TargetP 2.0 and DeepLoc 2.1 are academic downloads;

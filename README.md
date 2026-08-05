@@ -1,9 +1,8 @@
 # GWIscan (Genome-Wide Identification Scan)
 
-GWIscan finds and annotates members of one or more gene families and/or
-superfamilies across the proteomes of one or more species. You list the families
-in a config table, so it works for any families. The bundled example is a set of
-plant lectins.
+Genome-wide identification and annotation of gene families or superfamilies. You
+list the families in a config table, so it works for any families. The bundled
+example is a set of plant lectins.
 
 For each family it runs DIAMOND BLASTp, and for families that have a profile HMM
 it also runs HMMER `hmmscan`. It then checks the candidates with InterProScan and
