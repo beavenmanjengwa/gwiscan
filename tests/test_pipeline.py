@@ -46,6 +46,7 @@ def _patch_all(monkeypatch, calls, tools_available=True):
     monkeypatch.setattr(pipeline.logos, "run", recorder("weblogo"))
     monkeypatch.setattr(pipeline.meme, "run", recorder("meme"))
     monkeypatch.setattr(pipeline.iqtree, "run", recorder("iqtree"))
+    monkeypatch.setattr(pipeline.figures, "run", recorder("figures"))
     monkeypatch.setattr(pipeline.provenance, "run", recorder("provenance"))
 
 
@@ -78,6 +79,8 @@ def test_stage_prerequisite_ordering(tmp_path, monkeypatch):
     assert order["targetp"] < order["extract_mature"] < order["msa"]
     # trimAl runs after the MSA and before IQ-TREE (it feeds the tree)
     assert order["msa"] < order["trim"] < order["iqtree"]
+    # the ProtParam figures run after compile (they read the compiled table)
+    assert order["compile"] < order["figures"]
 
 
 def test_from_stage_resumes_without_rerunning_earlier_stages(tmp_path, monkeypatch):

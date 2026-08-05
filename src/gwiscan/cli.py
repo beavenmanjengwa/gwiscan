@@ -23,6 +23,7 @@ from . import (
     diamond,
     domains,
     external,
+    figures,
     hmm,
     iqtree,
     domain_bed,
@@ -66,6 +67,7 @@ COMMANDS = {
     "weblogo": ("Per-family conservation logos", logos.run),
     "meme": ("Per-family MEME motif discovery", meme.run),
     "iqtree": ("Per-family ML trees (IQ-TREE)", iqtree.run),
+    "figures": ("ProtParam distribution figures + stats (R)", figures.run),
     "provenance": ("Write run provenance", provenance.run),
     "run": ("Run the full pipeline (multi-species if config/species.tsv exists)", None),
 }
@@ -106,6 +108,7 @@ _OVERRIDE_KEYS = (
     "MEME_BIN",
     "TRIMAL_BIN",
     "TRIMAL_METHOD",
+    "RSCRIPT_BIN",
     "IQTREE_BIN",
     "IQTREE_MODEL",
     "IQTREE_BOOTSTRAP",
@@ -184,6 +187,8 @@ def _add_global_opts(p: argparse.ArgumentParser) -> None:
                    help="trimAl executable: PATH name or absolute path (default trimal)")
     p.add_argument("--trimal-method", dest="TRIMAL_METHOD", default=None,
                    help="trimAl heuristic: automated1 (default), gappyout, strict, strictplus")
+    p.add_argument("--rscript-bin", dest="RSCRIPT_BIN", default=None,
+                   help="Rscript executable for the figures stage (default Rscript)")
     p.add_argument("--iqtree-bin", dest="IQTREE_BIN", default=None,
                    help="IQ-TREE executable (default iqtree; install: conda install bioconda::iqtree)")
     p.add_argument("--iqtree-model", dest="IQTREE_MODEL", default=None,

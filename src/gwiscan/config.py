@@ -122,6 +122,9 @@ DEFAULTS = {
     "TRIMAL_METHOD": "automated1",
     # IQ-TREE per-family phylogenetic trees. Install via conda so iqtree is on
     # PATH: conda install bioconda::iqtree
+    # ProtParam distribution figures + stats (figures stage). Runs the bundled
+    # R/ggplot2 script; optional, auto-skipped if Rscript isn't installed.
+    "RSCRIPT_BIN": "Rscript",
     "IQTREE_BIN": "iqtree",
     "IQTREE_MODEL": "MFP",      # ModelFinder Plus (auto model selection)
     "IQTREE_BOOTSTRAP": 1000,   # ultrafast bootstrap replicates (-B); 0 = no bootstrap
@@ -206,6 +209,7 @@ class Config:
     MEME_BIN: str = "meme"
     TRIMAL_BIN: str = "trimal"
     TRIMAL_METHOD: str = "automated1"
+    RSCRIPT_BIN: str = "Rscript"
     IQTREE_BIN: str = "iqtree"
     IQTREE_MODEL: str = "MFP"
     IQTREE_BOOTSTRAP: int = 1000

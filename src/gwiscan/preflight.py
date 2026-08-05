@@ -128,7 +128,8 @@ def run(cfg: Config) -> None:
     # a PATH name or an absolute path (weblogo/meme/iqtree/targetp/deeploc bins), so
     # external.available accepts either.
     for opt in (cfg.TARGETP_BIN, cfg.DEEPLOC_BIN, "biolib",
-                cfg.WEBLOGO_BIN, cfg.MEME_BIN, cfg.TRIMAL_BIN, cfg.IQTREE_BIN):
+                cfg.WEBLOGO_BIN, cfg.MEME_BIN, cfg.TRIMAL_BIN, cfg.IQTREE_BIN,
+                cfg.RSCRIPT_BIN):
         if external.available(opt):
             external.log(f"[OK] {opt} found")
         else:

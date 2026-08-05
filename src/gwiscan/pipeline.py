@@ -34,6 +34,7 @@ from . import (
     meme,
     msa,
     preflight,
+    figures,
     provenance,
     score,
     setupdb,
@@ -78,7 +79,8 @@ STAGES = [
     ("weblogo", "18 WebLogo", lambda cfg: logos.run(cfg), "18_weblogo"),
     ("meme", "19 MEME motifs", lambda cfg: meme.run(cfg), "19_meme"),
     ("iqtree", "20 IQ-TREE", lambda cfg: iqtree.run(cfg), "20_iqtree"),
-    ("provenance", "21 Provenance", lambda cfg: provenance.run(cfg), "21_provenance"),
+    ("figures", "21 ProtParam figures", lambda cfg: figures.run(cfg), "21_figures"),
+    ("provenance", "22 Provenance", lambda cfg: provenance.run(cfg), "22_provenance"),
 ]
 STAGE_KEYS = [key for key, *_ in STAGES]
 
@@ -96,6 +98,7 @@ OPTIONAL_TOOL_STAGES = {
     "weblogo": "WEBLOGO_BIN",
     "meme": "MEME_BIN",
     "iqtree": "IQTREE_BIN",
+    "figures": "RSCRIPT_BIN",  # ProtParam boxplots via R; skipped if Rscript absent
 }
 
 

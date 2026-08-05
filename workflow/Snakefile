@@ -28,6 +28,7 @@ FINAL_TARGETS = [
     "intermediate/.weblogo.done",
     "intermediate/.meme.done",
     "intermediate/.iqtree.done",
+    "intermediate/.figures.done",
 ]
 
 rule all:
@@ -196,6 +197,12 @@ rule iqtree:
     output: touch("intermediate/.iqtree.done")
     threads: THREADS
     shell: "gwiscan iqtree --threads {threads}"
+
+# ProtParam distribution figures + stats (R/ggplot2) from the compiled table.
+rule figures:
+    input: "final_results/gwiscan_results.tsv"
+    output: touch("intermediate/.figures.done")
+    shell: "gwiscan figures"
 
 rule provenance:
     input: "final_results/gwiscan_results.tsv", "intermediate/.weblogo.done"
