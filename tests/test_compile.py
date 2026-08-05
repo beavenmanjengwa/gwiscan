@@ -58,18 +58,20 @@ def _label(col):
 
 
 def test_band_spans_groups_contiguous_columns():
-    cols = ["protein_id", "family", "gene_id", "chrom", "accession", "evalue"]
+    cols = ["protein_id", "family", "gene_id", "chrom",
+            "domain_architecture", "family_domain_count"]
     spans = band_spans(cols)
     assert spans == [
         (_label("protein_id"), 0, 1),
         (_label("gene_id"), 2, 3),
-        (_label("accession"), 4, 5),
+        (_label("domain_architecture"), 4, 5),
     ]
 
 
 def test_band_spans_tiles_full_width_exactly_once():
     cols = ["protein_id", "family", "gene_id", "chrom", "gene_start", "gene_end",
-            "strand", "accession", "evalue", "bitscore", "start", "end", "method"]
+            "strand", "domain_architecture", "family_domain_count", "architecture_type",
+            "evidence_level", "evidence_support", "evidence_criteria"]
     spans = band_spans(cols)
     covered = [i for _, a, b in spans for i in range(a, b + 1)]
     assert covered == list(range(len(cols)))   # no gaps, no overlaps, in order
@@ -93,8 +95,7 @@ def test_all_real_columns_are_mapped():
     # every column the pipeline can emit belongs to some band (no silent blanks)
     labeled = {c for _, cols in compile_mod.COLUMN_BANDS for c in cols}
     real = ["protein_id", "family", "superfamily", "gene_id", "chrom", "gene_start",
-            "gene_end", "strand", "accession", "evalue", "bitscore", "start", "end",
-            "method", "domain_architecture", "family_domain_count", "architecture_type",
+            "gene_end", "strand", "domain_architecture", "family_domain_count", "architecture_type",
             "evidence_level", "evidence_support", "evidence_criteria", "length_aa",
             "molecular_weight", "isoelectric_point", "negatively_charged_residues",
             "positively_charged_residues", "instability_index", "gravy", "aliphatic_index",
@@ -112,8 +113,9 @@ def test_apply_band_header_writes_two_rows_and_freezes(tmp_path):
     from openpyxl import load_workbook
     from gwiscan import io
 
-    cols = ["protein_id", "family", "accession", "evalue", "length_aa", "molecular_weight"]
-    df = pd.DataFrame([["a", "b", "c", 1.0, 100, 12.3]], columns=cols)
+    cols = ["protein_id", "family", "domain_architecture", "family_domain_count",
+            "length_aa", "molecular_weight"]
+    df = pd.DataFrame([["a", "b", "GNA", 1, 100, 12.3]], columns=cols)
     out = tmp_path / "r.xlsx"
     with pd.ExcelWriter(out, engine="openpyxl") as w:
         spans = band_spans(df.columns)
@@ -122,10 +124,10 @@ def test_apply_band_header_writes_two_rows_and_freezes(tmp_path):
 
     ws = load_workbook(out)["All_candidates"]
     assert ws["A1"].value == _label("protein_id")       # band row
-    assert ws["C1"].value == _label("accession")
+    assert ws["C1"].value == _label("domain_architecture")
     assert ws["E1"].value == _label("length_aa")
     assert ws["A2"].value == "proteinId"                # column-name row (camel)
-    assert ws["C2"].value == "accession"
+    assert ws["C2"].value == "domainArchitecture"
     assert ws["A3"].value == "a"                         # data starts row 3
     assert ws.freeze_panes == "C3"
     assert len(ws.merged_cells.ranges) == 3             # one merge per multi-col band

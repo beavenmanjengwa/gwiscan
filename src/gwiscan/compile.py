@@ -29,7 +29,6 @@ from .config import Config
 COLUMN_BANDS = [
     ("Identity", ["protein_id", "family", "superfamily"]),
     ("Chromosomal Localization", ["gene_id", "chrom", "gene_start", "gene_end", "strand"]),
-    ("Search hit (hmmscan / BLAST)", ["accession", "evalue", "bitscore", "start", "end", "method"]),
     ("Domain architecture", ["domain_architecture", "family_domain_count", "architecture_type"]),
     ("Evidence", ["evidence_level", "evidence_support", "evidence_criteria"]),
     ("Computed Physicochemical Properties",
@@ -330,11 +329,22 @@ def run(cfg: Config) -> None:
              ("evidence_criteria", criteria)]):
         df.insert(at + offset, name, values)
 
+    # domainArchitecture, familyDomainCount and every annotation column are per
+    # protein, so the results table carries one row per protein per family. A
+    # protein found by both searches, or carrying several domains of one family
+    # (e.g. tandem GNA domains), collapses to a single row: which searches found
+    # it is recorded by the evidence columns (evidenceSupport = both / hmm_only /
+    # blast_only), and every domain it carries by domainArchitecture.
+    df["evalue"] = pd.to_numeric(df["evalue"], errors="coerce")
     df.sort_values(["family", "protein_id", "evalue"], inplace=True)
+    df = df.drop_duplicates(subset=["protein_id", "family"], keep="first")
+    df.drop(columns=[c for c in ("accession", "evalue", "bitscore", "start", "end", "method")
+                     if c in df.columns], inplace=True)
     df.reset_index(drop=True, inplace=True)
 
     io.write_df(df, out_tsv, "tsv")
-    external.log(f"[OK] Final TSV saved: gwiscan_results.tsv ({len(df)} rows, {df['protein_id'].nunique()} proteins)")
+    external.log(f"[OK] Final TSV saved: gwiscan_results.tsv "
+                 f"({len(df)} rows, {df['protein_id'].nunique()} proteins)")
 
     # XLSX sheets — camelCase headers (io.to_camel) to match the TSV. The main
     # sheet gets a second, merged header row above the column names, banding each
@@ -347,19 +357,14 @@ def run(cfg: Config) -> None:
 
         summary = df.groupby("family").agg(
             n_proteins=("protein_id", "nunique"),
-            n_domain_hits=("protein_id", "count"),
-            method=("method", "first"),
-            mean_bitscore=("bitscore", "mean"),
-            min_evalue=("evalue", "min"),
-        ).round(4).reset_index()
+        ).reset_index()
         summary.rename(columns=io.to_camel).to_excel(writer, sheet_name="Family_summary", index=False)
 
-        # Superfamily rollup (superfamily mode only): proteins/hits per superfamily.
+        # Superfamily rollup (superfamily mode only): families/proteins per superfamily.
         if superfamily_mode:
             super_summary = df.groupby("superfamily").agg(
                 n_families=("family", "nunique"),
                 n_proteins=("protein_id", "nunique"),
-                n_domain_hits=("protein_id", "count"),
             ).reset_index()
             super_summary.rename(columns=io.to_camel).to_excel(
                 writer, sheet_name="Superfamily_summary", index=False)
