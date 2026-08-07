@@ -107,3 +107,11 @@ def test_weblogo_and_meme_bin_flags_flow_into_config(tmp_path):
     args2 = parser.parse_args(["meme", "-C", str(tmp_path), "--meme-bin", "/opt/meme"])
     cfg2 = cli._config_from_args(args2)
     assert cfg2.MEME_BIN == "/opt/meme"
+
+
+def test_annotation_flag_flows_into_config(tmp_path):
+    parser = cli.build_parser()
+    args = parser.parse_args(["coords", "-C", str(tmp_path), "--annotation", "/data/ann.gff3"])
+    cfg = cli._config_from_args(args)
+    assert cfg.ANNOTATION == "/data/ann.gff3"
+    assert str(cfg.annotation) == "/data/ann.gff3"

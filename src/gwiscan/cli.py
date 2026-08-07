@@ -91,6 +91,7 @@ _OVERRIDE_KEYS = (
     "DIAMOND_SENSITIVE_R2",
     "DIAMOND_BSR",
     "PRIMARY_TRANSCRIPT",
+    "ANNOTATION",
     "EBI_EMAIL",
     "INTERPRO_APPL",
     "INTERPRO_MODE",
@@ -149,6 +150,8 @@ def _add_global_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--primary-transcript", dest="PRIMARY_TRANSCRIPT",
                    action=argparse.BooleanOptionalAction, default=None,
                    help="Input is one protein per gene (default true; --no-primary-transcript if it has isoforms)")
+    p.add_argument("--annotation", dest="ANNOTATION", default=None,
+                   help="Genome annotation (GTF/GFF3) for the coords stage; overrides input/annotation.*")
     p.add_argument("--ebi-email", dest="EBI_EMAIL", default=None,
                    help="Email for the EBI InterProScan API")
     p.add_argument("--interpro-appl", dest="INTERPRO_APPL", default=None,
