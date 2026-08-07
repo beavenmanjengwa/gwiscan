@@ -29,8 +29,10 @@ MAP_HEADER = ["protein_id", "gene_id", "family", "chrom", "gene_start", "gene_en
               "strand"]
 
 # Attribute keys naming a feature, most specific first: a protein id in the FASTA
-# matches a transcript/protein id before it matches the gene it belongs to.
-ID_KEYS = ("transcript_id", "protein_id", "ID", "gene_id", "Parent")
+# matches a transcript/protein id before it matches the gene it belongs to. `Name`
+# is included because Phytozome GFF3 puts the clean transcript id there
+# (ID=Cucsa.000200.1.v1.122;Name=Cucsa.000200.1), and that is what proteomes carry.
+ID_KEYS = ("transcript_id", "protein_id", "ID", "Name", "gene_id", "Parent")
 
 # Ensembl-style prefixes on GFF3 identifiers (transcript:AT1G01010.1).
 ID_PREFIXES = ("transcript", "gene", "cds", "protein", "mrna")
@@ -85,6 +87,24 @@ def parse_annotation(path: Path | str) -> tuple:
             if line.startswith("#") or not line.strip():
                 continue
             fields = line.rstrip("\n").split("\t")
+            # Simple 4-column coordinate file: chrom, feature id, start, end (no
+            # strand or attributes). Some prepared annotations ship in this form.
+            if len(fields) == 4:
+                chrom = fields[0]
+                ident = strip_prefix(fields[1].strip())
+                try:
+                    start, end = int(fields[2]), int(fields[3])
+                except ValueError:
+                    continue
+                if ident:
+                    previous = spans.get(ident)
+                    if previous is None:
+                        spans[ident] = (chrom, start, end, ".")
+                    elif previous[0] == chrom:
+                        spans[ident] = (chrom, min(previous[1], start),
+                                        max(previous[2], end), previous[3])
+                    genes.setdefault(ident, ident.rsplit(".", 1)[0] if "." in ident else ident)
+                continue
             if len(fields) < 9:
                 continue
             chrom, strand = fields[0], fields[6]

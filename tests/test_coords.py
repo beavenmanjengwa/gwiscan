@@ -98,3 +98,43 @@ def test_write_gff3_emits_valid_feature_lines(tmp_path):
     assert fields[0] == "Chr1" and fields[1] == "GWIscan" and fields[2] == "gene"
     assert fields[3] == "1000" and fields[4] == "5000" and fields[6] == "+"
     assert fields[8] == "ID=Medtr1g001;protein=Medtr1g001.1;family=GNA"
+
+
+# --- new formats: 4-column files + Phytozome Name= attribute --------------------
+
+from gwiscan import coords as _coords
+
+
+def test_four_column_annotation(tmp_path):
+    # chrom, feature id, start, end  (no strand/attributes) -- e.g. Arabidopsis.gff
+    gff = tmp_path / "simple.gff"
+    gff.write_text("atChr1\tAT1G01010.1\t3631\t5899\n"
+                   "Gm01\tGlyma.01G000100.2\t78503\t103594\n")
+    spans, genes = _coords.parse_annotation(gff)
+    located, unresolved = _coords.locate(["AT1G01010.1", "Glyma.01G000100.2"], spans, genes)
+    assert located["AT1G01010.1"] == ("AT1G01010", "atChr1", 3631, 5899, ".")
+    assert located["Glyma.01G000100.2"][1:4] == ("Gm01", 78503, 103594)
+    assert unresolved == []
+
+
+def test_phytozome_name_attribute_is_indexed(tmp_path):
+    # Proteome id matches Name=, not ID= (Phytozome GFF3).
+    gff = tmp_path / "phyto.gff3"
+    gff.write_text(
+        "sc9\tphytozome\tmRNA\t1869\t4028\t.\t-\t.\t"
+        "ID=Cucsa.000200.1.v1.122;Name=Cucsa.000200.1;Parent=Cucsa.000200.v1\n")
+    spans, _ = _coords.parse_annotation(gff)
+    located, unresolved = _coords.locate(["Cucsa.000200.1"], spans)
+    assert located["Cucsa.000200.1"][1:] == ("sc9", 1869, 4028, "-")
+
+
+def test_dot_p_suffix_resolves_against_name(tmp_path):
+    # Pvulgaris proteome ids carry a trailing ".p" that the GFF Name does not.
+    gff = tmp_path / "pv.gff3"
+    gff.write_text(
+        "Chr01\tphytozome\tmRNA\t1705\t6715\t.\t-\t.\t"
+        "ID=Phvul.001G000400.3.v2.1;Name=Phvul.001G000400.3;Parent=Phvul.001G000400.v2.1\n")
+    spans, _ = _coords.parse_annotation(gff)
+    located, unresolved = _coords.locate(["Phvul.001G000400.3.p"], spans)
+    assert "Phvul.001G000400.3.p" in located
+    assert located["Phvul.001G000400.3.p"][1:4] == ("Chr01", 1705, 6715)
