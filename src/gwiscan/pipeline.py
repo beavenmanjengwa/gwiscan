@@ -183,7 +183,7 @@ def run(cfg: Config, include_shared_setup: bool = True) -> None:
     cfg.ensure_dirs()
     tag = f" [{cfg.SPECIES}]" if cfg.SPECIES else ""
     external.log("=" * 56)
-    external.log(f" GWIscan - genome-wide gene-family annotation pipeline{tag}")
+    external.log(f" GWIscan - genome-wide identification and annotation of gene families or superfamilies{tag}")
     external.log("=" * 56)
     external.log(f" Threads         : {cfg.THREADS}")
     external.log(f" DIAMOND e-value : {cfg.DIAMOND_EVALUE}")
