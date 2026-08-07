@@ -51,7 +51,7 @@ about:
   home: https://github.com/beavenmanjengwa/gwiscan
   license: MIT
   license_file: LICENSE
-  summary: Genome-wide identification and annotation of gene families or superfamilies
+  summary: Genome-wide identification and annotation pipeline for gene families or superfamilies
   description: |
     GWIscan identifies and annotates gene families or superfamilies. It runs
     DIAMOND and HMMER searches, checks candidates with InterProScan, and

@@ -1,6 +1,6 @@
 # GWIscan (Genome-Wide Identification Scan)
 
-Genome-wide identification and annotation of gene families or superfamilies. You
+Genome-wide identification and annotation pipeline for gene families or superfamilies. You
 list the families in a config table, so it works for any families. The bundled
 example is a set of plant lectins.
 

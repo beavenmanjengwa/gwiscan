@@ -2,7 +2,7 @@
 """
 ####################################################################################################
 #                                                                                                  #
-# __init__.py - GWIscan: genome-wide identification and annotation of gene families or superfamilies.#
+# __init__.py - GWIscan: genome-wide identification and annotation pipeline for gene families or superfamilies.#
 #                                                                                                  #
 # Exposes one console command (`gwiscan`) whose subcommands are the individual pipeline stages     #
 # (see gwiscan.cli). Each stage is a small module with a run(cfg) function operating on a shared   #

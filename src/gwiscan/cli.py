@@ -238,7 +238,7 @@ def _config_from_args(args) -> Config:
 # docstring is the source-file header comment (its ASCII box mangles once argparse
 # rewraps it into one paragraph), not user-facing help text.
 _CLI_DESCRIPTION = (
-    "Genome-wide identification and annotation of gene families or superfamilies. "
+    "Genome-wide identification and annotation pipeline for gene families or superfamilies. "
     "One subcommand per pipeline stage, plus `run` for the whole pipeline. "
     "Run `gwiscan <stage> --help` for a stage's options."
 )
