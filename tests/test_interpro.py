@@ -56,14 +56,14 @@ def test_pfam_candidate_ids_excludes_custom_and_blast_only(tmp_path):
         "CRA\tCRA.hmm\tcra.fasta\n"      # custom HMM -> no InterProScan
         "EUL\t-\teul.fasta\n"            # BLAST-only -> no InterProScan
     )
-    (tmp_path / "intermediate").mkdir()
-    (tmp_path / "intermediate" / "candidates_merged.tsv").write_text(
+    cfg = Config(root=tmp_path)
+    # cfg.result() routes candidates_merged.tsv into intermediate/candidates/.
+    cfg.result("candidates_merged.tsv").write_text(
         "proteinId\tfamily\taccession\tevalue\tbitscore\tstart\tend\tmethod\n"
         "P_gna\tGNA\tPF01453.1\t1e-40\t130\t10\t110\thmm\n"
         "P_cra\tCRA\t-\t1e-30\t100\t25\t300\thmm\n"
         "P_eul\tEUL\t-\t1e-20\t80\t5\t200\tblast\n"
     )
-    cfg = Config(root=tmp_path)
     assert pfam_candidate_ids(cfg) == {"P_gna"}
 
 

@@ -34,6 +34,34 @@ def _to_bool(value):
         return value
     return str(value).strip().lower() in ("1", "true", "yes", "on")
 
+
+# Intermediate working files are grouped into per-tool subfolders so the working
+# directory is navigable instead of one flat dump. Config.result() routes a
+# filename to its subfolder via _result_subdir(); everything read/written through
+# result() moves together, and single-file stage outputs (targetp.tsv, deeploc.tsv,
+# domains.bed, chromosome_map.tsv, ...) stay at the intermediate root.
+_CANDIDATE_FILES = {
+    "candidates.fasta", "candidates_merged.tsv", "candidates_primary.fasta",
+    "final_candidates.tsv", "final_candidates.fasta",
+}
+
+
+def _result_subdir(name: str) -> str:
+    """The intermediate subfolder for a result filename ('' = the root)."""
+    if name.startswith("interproscan") or name == "interpro_input.fasta":
+        return "interproscan"
+    if name in _CANDIDATE_FILES:
+        return "candidates"
+    if name.startswith("hmm_") or name.startswith("arch_"):
+        return "hmm"
+    if name.startswith("diamond_") or name in ("blast_hits.tsv", "family_detectability.tsv"):
+        return "diamond"
+    # Per-protein prediction annotators (TargetP signal/transit peptide, DeepLoc
+    # subcellular localization, DeepTMHMM membrane topology).
+    if name in ("targetp.tsv", "deeploc.tsv", "deeptmhmm.tsv"):
+        return "prediction"
+    return ""
+
 # Parameter defaults. Keys are UPPER_CASE — one name per setting across the
 # config.yaml key, the environment variable, and the Config field.
 DEFAULTS = {
@@ -359,8 +387,16 @@ class Config:
         return base / self.SPECIES if self.SPECIES else base
 
     def result(self, name: str) -> Path:
-        """Path to a file inside the intermediate/ working directory."""
-        return self.results / name
+        """Path to a file inside the intermediate/ working directory.
+
+        Grouped into a per-tool subfolder (interproscan/, candidates/, hmm/,
+        diamond/) when the filename maps to one, else the intermediate root. The
+        chosen directory is created so writers (including external tools that will
+        not make it themselves) can write straight to the returned path."""
+        sub = _result_subdir(name)
+        directory = self.results / sub if sub else self.results
+        directory.mkdir(parents=True, exist_ok=True)
+        return directory / name
 
     @property
     def protparam_dir(self) -> Path:

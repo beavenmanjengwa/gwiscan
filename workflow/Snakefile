@@ -24,7 +24,7 @@ FINAL_TARGETS = [
     "final_results/gwiscan_results.tsv",
     "final_results/gwiscan_results.xlsx",
     "final_results/provenance.txt",
-    "intermediate/family_detectability.tsv",
+    "intermediate/diamond/family_detectability.tsv",
     "intermediate/.weblogo.done",
     "intermediate/.meme.done",
     "intermediate/.iqtree.done",
@@ -53,7 +53,7 @@ rule search_hmm:
     input:
         hmm_db   = "db/hmm/all_models.hmm",
         proteome = "input/proteome.fasta"
-    output: "intermediate/hmm_hits.tsv", "intermediate/hmm_domtbl.txt"
+    output: "intermediate/hmm/hmm_hits.tsv", "intermediate/hmm/hmm_domtbl.txt"
     threads: THREADS
     shell: "gwiscan search-hmm --threads {threads}"
 
@@ -61,82 +61,82 @@ rule search_diamond:
     input:
         flag     = "db/.db_setup.done",
         proteome = "input/proteome.fasta"
-    output: "intermediate/blast_hits.tsv"
+    output: "intermediate/diamond/blast_hits.tsv"
     threads: THREADS
     shell: "gwiscan search-diamond --threads {threads}"
 
 rule merge:
     input:
-        hmm   = "intermediate/hmm_hits.tsv",
-        blast = "intermediate/blast_hits.tsv"
-    output: "intermediate/candidates_merged.tsv", "intermediate/candidates.fasta"
+        hmm   = "intermediate/hmm/hmm_hits.tsv",
+        blast = "intermediate/diamond/blast_hits.tsv"
+    output: "intermediate/candidates/candidates_merged.tsv", "intermediate/candidates/candidates.fasta"
     shell: "gwiscan merge"
 
 # Detectability profiles each family from the two independent searches
 # (hmmscan vs DIAMOND round 1) — a report, so it is a final target.
 rule score:
     input:
-        hmm   = "intermediate/hmm_hits.tsv",
-        blast = "intermediate/blast_hits.tsv",
+        hmm   = "intermediate/hmm/hmm_hits.tsv",
+        blast = "intermediate/diamond/blast_hits.tsv",
         map   = FAMILY_TABLE
-    output: "intermediate/family_detectability.tsv"
+    output: "intermediate/diamond/family_detectability.tsv"
     shell: "gwiscan score"
 
 # InterProScan gates the initial candidates into the confirmed FINAL set; the
 # per-candidate annotators run only on final_candidates.fasta.
 rule interpro:
-    input: "intermediate/candidates.fasta"
+    input: "intermediate/candidates/candidates.fasta"
     output:
-        "intermediate/interproscan.tsv",
-        "intermediate/interproscan.gff3"
+        "intermediate/interproscan/interproscan.tsv",
+        "intermediate/interproscan/interproscan.gff3"
     shell: "gwiscan interpro"
 
 rule confirm:
     input:
-        merged   = "intermediate/candidates_merged.tsv",
-        interpro = "intermediate/interproscan.tsv",
+        merged   = "intermediate/candidates/candidates_merged.tsv",
+        interpro = "intermediate/interproscan/interproscan.tsv",
         map      = FAMILY_TABLE,
-        fasta    = "intermediate/candidates.fasta"
+        fasta    = "intermediate/candidates/candidates.fasta"
     output:
-        "intermediate/final_candidates.tsv",
-        "intermediate/final_candidates.fasta"
+        "intermediate/candidates/final_candidates.tsv",
+        "intermediate/candidates/final_candidates.fasta"
     shell: "gwiscan confirm"
 
 rule protparam:
-    input: "intermediate/final_candidates.fasta"
-    output: "intermediate/protparam.tsv"
+    input: "intermediate/candidates/final_candidates.fasta"
+    output: "intermediate/protparam/protparam.tsv"
     shell: "gwiscan protparam"
 
 rule targetp:
-    input: "intermediate/final_candidates.fasta"
-    output: "intermediate/targetp.tsv"
+    input: "intermediate/candidates/final_candidates.fasta"
+    output: "intermediate/prediction/targetp.tsv"
     shell: "gwiscan targetp"
 
 rule deeptmhmm:
-    input: "intermediate/final_candidates.fasta"
-    output: "intermediate/deeptmhmm.tsv"
+    input: "intermediate/candidates/final_candidates.fasta"
+    output: "intermediate/prediction/deeptmhmm.tsv"
     shell: "gwiscan deeptmhmm"
 
 rule deeploc:
-    input: "intermediate/final_candidates.fasta"
-    output: "intermediate/deeploc.tsv"
+    input: "intermediate/candidates/final_candidates.fasta"
+    output: "intermediate/prediction/deeploc.tsv"
     shell: "gwiscan deeploc"
 
 # Chromosomal coordinates come from the species' representative GTF/GFF3; the
 # rule is skipped by the CLI when no annotation is configured.
 rule coords:
-    input: "intermediate/final_candidates.tsv"
+    input: "intermediate/candidates/final_candidates.tsv"
     output: "intermediate/chromosome_map.tsv"
     shell: "gwiscan coords"
 
 rule compile:
     input:
-        "intermediate/final_candidates.tsv",
-        "intermediate/protparam.tsv",
-        "intermediate/targetp.tsv",
-        "intermediate/deeptmhmm.tsv",
-        "intermediate/deeploc.tsv",
-        "intermediate/interproscan.tsv"
+        "intermediate/candidates/final_candidates.tsv",
+        "intermediate/protparam/protparam.tsv",
+        "intermediate/prediction/targetp.tsv",
+        "intermediate/prediction/deeptmhmm.tsv",
+        "intermediate/prediction/deeploc.tsv",
+        "intermediate/interproscan/interproscan.tsv"
     output:
         "final_results/gwiscan_results.tsv",
         "final_results/gwiscan_results.xlsx"
@@ -144,8 +144,8 @@ rule compile:
 
 rule domain_bed:
     input:
-        merged   = "intermediate/candidates_merged.tsv",
-        interpro = "intermediate/interproscan.tsv",
+        merged   = "intermediate/candidates/candidates_merged.tsv",
+        interpro = "intermediate/interproscan/interproscan.tsv",
         map      = FAMILY_TABLE
     output: "intermediate/domains.bed"
     shell: "gwiscan domain-bed"
@@ -153,14 +153,14 @@ rule domain_bed:
 rule extract_domains:
     input:
         bed        = "intermediate/domains.bed",
-        candidates = "intermediate/candidates.fasta"
+        candidates = "intermediate/candidates/candidates.fasta"
     output: "intermediate/domain_sequences/domain_map.tsv"
     shell: "gwiscan extract-domains"
 
 rule extract_mature:
     input:
-        targetp = "intermediate/targetp.tsv",
-        final   = "intermediate/final_candidates.tsv"
+        targetp = "intermediate/prediction/targetp.tsv",
+        final   = "intermediate/candidates/final_candidates.tsv"
     output: touch("intermediate/.mature.done")
     shell: "gwiscan extract-mature"
 

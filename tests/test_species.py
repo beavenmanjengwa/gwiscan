@@ -20,7 +20,8 @@ def test_single_species_paths_unchanged(tmp_path):
     assert cfg.logs == tmp_path / "logs"
     assert cfg.proteome == tmp_path / "input" / "proteome.fasta"
     assert cfg.proteome_db == tmp_path / "db" / "blast" / "proteome_db"
-    assert cfg.result("hmm_hits.tsv") == tmp_path / "intermediate" / "hmm_hits.tsv"
+    # intermediate files are grouped into per-tool subfolders (hmm/, candidates/, ...)
+    assert cfg.result("hmm_hits.tsv") == tmp_path / "intermediate" / "hmm" / "hmm_hits.tsv"
 
 
 def test_multi_species_namespaced_paths(tmp_path):
@@ -29,7 +30,7 @@ def test_multi_species_namespaced_paths(tmp_path):
     assert cfg.logs == tmp_path / "logs" / "Ath"
     # final deliverables: top-level final_results/<Prefix>/, not nested in intermediate/
     assert cfg.final_dir == tmp_path / "final_results" / "Ath"
-    assert cfg.result("hmm_hits.tsv") == tmp_path / "intermediate" / "Ath" / "hmm_hits.tsv"
+    assert cfg.result("hmm_hits.tsv") == tmp_path / "intermediate" / "Ath" / "hmm" / "hmm_hits.tsv"
     # per-species proteome db so species never share/overwrite each other
     assert cfg.proteome_db == tmp_path / "db" / "blast" / "Ath_proteome_db"
     # relative proteome resolved against the project root

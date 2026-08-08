@@ -30,29 +30,30 @@ DOMTBL = (
 
 def _make_project(tmp_path):
     (tmp_path / "config").mkdir()
-    (tmp_path / "intermediate").mkdir()
     (tmp_path / "config" / "family.tsv").write_text(FAMILY_MAP)
-    (tmp_path / "intermediate" / "hmm_domtbl.txt").write_text(DOMTBL)
-    return Config(root=tmp_path)
+    cfg = Config(root=tmp_path)
+    # cfg.result() routes the hmm working files into intermediate/hmm/ and creates it.
+    cfg.result("hmm_domtbl.txt").write_text(DOMTBL)
+    return cfg
 
 
-def _read_hits(tmp_path):
+def _read_hits(cfg):
     # Files are camelCase on disk; io.read_tsv normalises back to snake_case.
-    return io.read_tsv(tmp_path / "intermediate" / "hmm_hits.tsv").astype(str).to_dict("records")
+    return io.read_tsv(cfg.result("hmm_hits.tsv")).astype(str).to_dict("records")
 
 
 def test_parse_produces_shared_schema(tmp_path):
     cfg = _make_project(tmp_path)
     n = hmm.parse_domtbl(cfg)
     assert n == 2
-    rows = _read_hits(tmp_path)
+    rows = _read_hits(cfg)
     assert list(rows[0].keys()) == HIT_HEADER
 
 
 def test_protein_and_family_not_swapped(tmp_path):
     cfg = _make_project(tmp_path)
     hmm.parse_domtbl(cfg)
-    by_protein = {r["protein_id"]: r for r in _read_hits(tmp_path)}
+    by_protein = {r["protein_id"]: r for r in _read_hits(cfg)}
 
     # The query column is the protein id, not the HMM name.
     assert "sp|P12345|LEC_SOYBN" in by_protein
@@ -77,7 +78,7 @@ def test_unmapped_accession_falls_back_to_hmm_name(tmp_path):
         "Mystery_dom PF99999.1 90 orphan_prot - 100 1e-10 40.0 0.0 1 1 "
         "1e-12 1e-10 38.0 0.0 1 89 5 88 3 90 0.9 unknown\n"
     )
-    (tmp_path / "intermediate" / "hmm_domtbl.txt").write_text(extra)
+    cfg.result("hmm_domtbl.txt").write_text(extra)
     hmm.parse_domtbl(cfg)
-    by_protein = {r["protein_id"]: r for r in _read_hits(tmp_path)}
+    by_protein = {r["protein_id"]: r for r in _read_hits(cfg)}
     assert by_protein["orphan_prot"]["family"] == "Mystery_dom"
