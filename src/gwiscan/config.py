@@ -362,6 +362,12 @@ class Config:
         """Path to a file inside the intermediate/ working directory."""
         return self.results / name
 
+    @property
+    def protparam_dir(self) -> Path:
+        """intermediate/<species>/protparam/ — every ProtParam working file (the
+        table, and the figures stage's stats + outlier CSVs) grouped in one folder."""
+        return self.results / "protparam"
+
     def ensure_dirs(self) -> None:
         for d in (self.results, self.logs):
             d.mkdir(parents=True, exist_ok=True)

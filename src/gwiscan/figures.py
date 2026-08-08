@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-####################################################################################################
-#                                                                                                  #
-# figures.py - Per-family ProtParam distribution figures + summary stats (the `figures` stage).    #
-#                                                                                                  #
-# Runs after compile. Calls the bundled R/ggplot2 script on final_results/gwiscan_results.tsv to    #
-# write, into final_results/: a faceted boxplot of the ProtParam properties (600 dpi PNG/TIFF +     #
-# PDF), a per-family summary table, and the list of Tukey outliers. Optional: needs Rscript on      #
-# PATH; if it isn't installed the `run` stage auto-skips.                                           #
-#                                                                                                  #
-####################################################################################################
+######################################################################################################
+#                                                                                                    #
+# figures.py - Per-family ProtParam distribution figures + summary stats (the `figures` stage).      #
+#                                                                                                    #
+# Runs after compile. Calls the bundled R/ggplot2 script on final_results/gwiscan_results.tsv.       #
+# The FIGURES (faceted 600 dpi PNG/TIFF + PDF boxplots) go to final_results/figures/; the per-family #
+# stats table and the Tukey-outlier list are intermediate working files, written to intermediate/.   #
+# Optional: needs Rscript on PATH; if it isn't installed the `run` stage auto-skips.                 #
+#                                                                                                    #
+######################################################################################################
 """
 
 from __future__ import annotations
@@ -34,9 +34,14 @@ def run(cfg: Config) -> None:
         external.log(f"[WARN] {results} not found; run compile first. Skipping figures.")
         return
 
-    # The R script reads gwiscan_results.tsv and writes its outputs in the working
-    # directory, so run it inside final_results/ (per species in multi-species mode).
+    # The R script reads gwiscan_results.tsv from the working directory (run inside
+    # final_results/, per species in multi-species mode) and writes the boxplot
+    # images into its figures/ subfolder. The stats + outlier tables are intermediate,
+    # so intermediate/protparam/ is passed as the first argument for those.
+    cfg.protparam_dir.mkdir(parents=True, exist_ok=True)
     external.log(f"[figures] Rendering ProtParam distributions from {results.name}...")
-    external.run([cfg.RSCRIPT_BIN, "--vanilla", str(_R_SCRIPT)], cwd=cfg.final_dir)
-    external.log("[OK] ProtParam figures + stats written to final_results/ "
-                 "(protparam_boxplots.*, protparam_stats.csv, protparam_outliers.csv)")
+    external.run([cfg.RSCRIPT_BIN, "--vanilla", str(_R_SCRIPT), str(cfg.protparam_dir)],
+                 cwd=cfg.final_dir)
+    external.log("[OK] ProtParam boxplots -> final_results/figures/ "
+                 "(protparam_boxplots.*); stats + outliers -> intermediate/protparam/ "
+                 "(protparam_stats.csv, protparam_outliers.csv)")

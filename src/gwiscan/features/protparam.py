@@ -83,11 +83,12 @@ def run(cfg: Config) -> None:
 
     df = pd.DataFrame(rows, columns=COLUMNS)
 
+    cfg.protparam_dir.mkdir(parents=True, exist_ok=True)
     written = []
     for fmt in cfg.PROTPARAM_FORMATS:
         if fmt not in _FORMATS:
             external.log(f"[WARN] unknown protparam format '{fmt}' (use tsv/xlsx/csv)")
             continue
-        io.write_df(df, cfg.result(f"protparam.{fmt}"), fmt)
-        written.append(f"protparam.{fmt}")
+        io.write_df(df, cfg.protparam_dir / f"protparam.{fmt}", fmt)
+        written.append(f"protparam/protparam.{fmt}")
     external.log(f"[OK] ProtParam: {len(df)} sequences -> {', '.join(written)}")

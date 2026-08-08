@@ -242,7 +242,7 @@ def run(cfg: Config) -> None:
             if column in df.columns:
                 df.insert(at + offset, column, df.pop(column))
 
-    pp = _load(cfg.result("protparam.tsv"), "protparam")
+    pp = _load(cfg.protparam_dir / "protparam.tsv", "protparam")
     tp = _load(cfg.result("targetp.tsv"), "targetp")
     tm = _load(cfg.result("deeptmhmm.tsv"), "deeptmhmm")
     dl = _load(cfg.result("deeploc.tsv"), "deeploc")

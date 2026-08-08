@@ -28,13 +28,23 @@ library(tidyr)
 setwd(".")
 
 # -- Paths --------------------------------------------------------------------
+# Read the compiled table from the working directory (final_results/). The FIGURES
+# (the boxplot images) go into a figures/ subfolder of final_results/. The stats and
+# outlier TABLES are intermediate working files, so they go to the intermediate
+# directory passed as the first command-line argument (falls back to the cwd).
 results_file <- "gwiscan_results.tsv"   # GWIscan compiled table (family + ProtParam)
 
-out_png  <- "protparam_boxplots.600dpi.png"
-out_tiff <- "protparam_boxplots.600dpi.tiff"
-out_pdf  <- "protparam_boxplots.pdf"
-out_stats    <- "protparam_stats.csv"
-out_outliers <- "protparam_outliers.csv"
+args <- commandArgs(trailingOnly = TRUE)
+inter_dir <- if (length(args) >= 1 && nzchar(args[1])) args[1] else "."
+
+fig_dir <- "figures"
+dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
+
+out_png  <- file.path(fig_dir, "protparam_boxplots.600dpi.png")
+out_tiff <- file.path(fig_dir, "protparam_boxplots.600dpi.tiff")
+out_pdf  <- file.path(fig_dir, "protparam_boxplots.pdf")
+out_stats    <- file.path(inter_dir, "protparam_stats.csv")
+out_outliers <- file.path(inter_dir, "protparam_outliers.csv")
 
 # -- Settings -----------------------------------------------------------------
 # Grouping column: "family" for families, "superfamily" for the superfamily

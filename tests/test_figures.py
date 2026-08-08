@@ -27,7 +27,9 @@ def test_run_invokes_rscript_in_final_dir(tmp_path, monkeypatch):
     figures.run(cfg)
 
     assert calls["cmd"][0] == "Rscript"
-    assert calls["cmd"][-1].endswith("protparam_boxplots.R")
+    assert any(c.endswith("protparam_boxplots.R") for c in calls["cmd"])
+    # intermediate/protparam/ is passed as the last arg (stats + outliers go there)
+    assert Path(calls["cmd"][-1]) == cfg.protparam_dir
     # runs inside final_results/ so the script finds gwiscan_results.tsv there
     assert Path(calls["cwd"]) == cfg.final_dir
 
