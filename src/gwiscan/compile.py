@@ -288,8 +288,12 @@ def run(cfg: Config) -> None:
     # Pfam only (one coordinate system); the family domain is known per row from the
     # family's own Pfam accession.
     arch = pfam_architecture(ipr)
-    fam_to_pfam = {r["family"]: r["pfam_model"]
-                   for r in io.family_records(cfg.family_map) if r["pfam_model"]}
+    if cfg.is_architecture:
+        from . import architecture as arch_mod
+        fam_to_pfam = arch_mod.fam_to_pfam(arch_mod.read_rules(cfg.architecture_map))
+    else:
+        fam_to_pfam = {r["family"]: r["pfam_model"]
+                       for r in io.family_records(cfg.family_map) if r["pfam_model"]}
     architectures = [" + ".join(label for _, label in arch.get(str(pid), [])) or "-"
                      for pid in df["protein_id"]]
     counts, types = [], []

@@ -1,6 +1,6 @@
 THREADS: 4
 OUTPUT: ""                     # where results/ and logs/ go; empty = the project dir (-C). CLI: -o/--output
-MODE: family                   # "family" (flat) or "superfamily" (adds a Superfamily rollup; family map needs a Superfamily column)
+MODE: family                   # "family" (flat), "superfamily" (adds a Superfamily rollup; family map needs a Superfamily column), or "architecture" (domain-combination: primary + required Pfam domains via two-pass hmmscan; rules in config/architecture.tsv)
 SPECIES_PARALLEL: 0            # multi-species: concurrent species. 0 = auto (cores // THREADS); N = exactly N at once
 DIAMOND_EVALUE: "1e-5"
 DIAMOND_IDENTITY: 30           # round 2 min % identity (native seeds); round 1 is --very-sensitive, E-value only

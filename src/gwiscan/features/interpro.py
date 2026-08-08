@@ -292,8 +292,11 @@ def pfam_candidate_ids(cfg: Config) -> set:
     merged = cfg.result("candidates_merged.tsv")
     if not merged.exists():
         return set()
-    pfam_families = {r["family"] for r in io.family_records(cfg.family_map) if r["pfam_model"]}
     df = io.read_tsv(merged)
+    # Architecture mode: every final candidate is annotated (no per-family Pfam gate).
+    if cfg.is_architecture:
+        return set(df["protein_id"].astype(str))
+    pfam_families = {r["family"] for r in io.family_records(cfg.family_map) if r["pfam_model"]}
     return set(df.loc[df["family"].isin(pfam_families), "protein_id"].astype(str))
 
 

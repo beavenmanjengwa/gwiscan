@@ -7,7 +7,8 @@ the prefix is the project key and also drives the domain ids.
 import pytest
 
 from gwiscan.config import Config
-from gwiscan.species import _concurrency, read_species_manifest
+from gwiscan.species import _concurrency, read_species_manifest, write_combined_summary
+from gwiscan import io
 
 
 # --- Config path namespacing -------------------------------------------------
@@ -193,3 +194,43 @@ def test_status_roundtrip_and_merge(tmp_path):
 
 def test_status_load_missing_file_is_empty(tmp_path):
     assert species_mod._load_status(tmp_path / "nope.tsv") == {}
+
+
+# --- Cross-species combined summary ------------------------------------------
+
+def _write_results(cfg, prefix, rows):
+    """Write a minimal final_results/<prefix>/gwiscan_results.tsv (camelCase headers)."""
+    d = cfg.output_root / "final_results" / prefix
+    d.mkdir(parents=True, exist_ok=True)
+    io.write_tsv(d / "gwiscan_results.tsv", ["protein_id", "family"], rows)
+
+
+def test_combined_summary_matrix(tmp_path):
+    cfg = Config(root=tmp_path)
+    _write_results(cfg, "Ath", [["a1", "GNA"], ["a2", "GNA"], ["a3", "Legume"]])
+    _write_results(cfg, "Gma", [["g1", "GNA"], ["g2", "Legume"], ["g3", "Legume"]])
+
+    write_combined_summary(cfg, ["Ath", "Gma"])
+
+    tsv = tmp_path / "final_results" / "all_species_summary.tsv"
+    lines = [ln.split("\t") for ln in tsv.read_text().splitlines()]
+    header, body = lines[0], {r[0]: r for r in lines[1:]}
+    # species columns kept verbatim (not camelCased), plus Family and Total
+    assert header == ["Family", "Ath", "Gma", "Total"]
+    assert body["GNA"] == ["GNA", "2", "1", "3"]
+    assert body["Legume"] == ["Legume", "1", "2", "3"]
+    assert body["Total"] == ["Total", "3", "3", "6"]
+    # stacked members carry a species column
+    members = io.read_tsv(tmp_path / "final_results" / "all_species_members.tsv")
+    assert set(members["species"]) == {"Ath", "Gma"}
+    assert len(members) == 6
+
+
+def test_combined_summary_skips_missing(tmp_path):
+    cfg = Config(root=tmp_path)
+    _write_results(cfg, "Ath", [["a1", "GNA"]])
+    # Gma has no results on disk -> skipped, not an error
+    write_combined_summary(cfg, ["Ath", "Gma"])
+    tsv = tmp_path / "final_results" / "all_species_summary.tsv"
+    assert tsv.exists()
+    assert "Gma" not in tsv.read_text().splitlines()[0]

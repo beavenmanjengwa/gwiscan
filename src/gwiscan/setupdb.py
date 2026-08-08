@@ -49,11 +49,46 @@ def _ensure_hmm(cfg: Config, acc: str):
     return dest
 
 
+def _press(cfg: Config, hmm_models, db_path) -> None:
+    """Concatenate the collected HMM files and hmmpress them into db_path."""
+    if not hmm_models:
+        external.log(f"[WARN] no models to press for {db_path.name}; HMM search will be empty")
+    external.log(f"[{datetime.now()}] Pressing HMM database {db_path.name} ({len(hmm_models)} models)...")
+    with open(db_path, "wb") as out:
+        for hmm_path in hmm_models:
+            out.write(hmm_path.read_bytes())
+    external.run(["hmmpress", "-f", db_path])
+    external.log(f"[OK] HMM database pressed: {db_path.name}")
+
+
+def setup_architecture(cfg: Config) -> None:
+    """Architecture-mode setup: fetch + press two Pfam HMM databases from the rules.
+    A PRIMARY-only db seeds the genome-wide search (pass 1); a primary+required db
+    searches the candidates (pass 2). No DIAMOND / BLAST — this mode is hmmscan-only
+    and InterProScan annotates the final candidates afterwards."""
+    from . import architecture
+
+    cfg.hmm_dir.mkdir(parents=True, exist_ok=True)
+    external.require("hmmpress")
+    rules = architecture.read_rules(cfg.architecture_map)
+    primary = architecture.primary_accessions(rules)
+    every = architecture.all_accessions(rules)
+    external.log(f"[{datetime.now()}] Architecture mode: {len(rules)} rule(s); "
+                 f"primary {primary}; primary+required {every}")
+
+    _press(cfg, [_ensure_hmm(cfg, acc) for acc in primary], cfg.primary_hmm_db)
+    _press(cfg, [_ensure_hmm(cfg, acc) for acc in every], cfg.hmm_db)
+
+
 def setup_shared(cfg: Config) -> None:
     """Species-independent setup: press the identifying HMM db and verify every
     family's BlastModel query FASTA. Safe to run once and reuse across species
     (the HMM db and model FASTAs are shared, read-only references).
     """
+    if cfg.is_architecture:
+        setup_architecture(cfg)
+        return
+
     cfg.hmm_dir.mkdir(parents=True, exist_ok=True)
     cfg.blast_dir.mkdir(parents=True, exist_ok=True)
     external.require("hmmpress")
@@ -121,8 +156,12 @@ def setup_proteome(cfg: Config) -> None:
 
 
 def run(cfg: Config) -> None:
-    """Build the shared HMM database and this proteome's DIAMOND database."""
+    """Build the shared HMM database and this proteome's DIAMOND database.
+
+    Architecture mode is hmmscan-only, so it presses just the component HMM db and
+    skips the DIAMOND proteome database entirely."""
     external.log(f"[{datetime.now()}] Starting database setup")
     setup_shared(cfg)
-    setup_proteome(cfg)
+    if not cfg.is_architecture:
+        setup_proteome(cfg)
     external.log(f"[{datetime.now()}] Database setup complete.")

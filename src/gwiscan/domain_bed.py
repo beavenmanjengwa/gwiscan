@@ -91,8 +91,14 @@ def run(cfg: Config) -> None:
 
     candidates_df = io.read_tsv(merged)
     interpro_df = io.read_tsv(interpro)
-    family_to_pfam = family_pfam_map(cfg.family_map)
-    custom_families = io.custom_hmm_families(cfg.family_map)
+    if cfg.is_architecture:
+        # Every architecture takes its domain coordinates from its own hmmscan hits
+        # (the primary + required domains), like a custom-HMM family.
+        family_to_pfam = {}
+        custom_families = set(candidates_df["family"].astype(str))
+    else:
+        family_to_pfam = family_pfam_map(cfg.family_map)
+        custom_families = io.custom_hmm_families(cfg.family_map)
 
     rows = build_bed(candidates_df, family_to_pfam, interpro_df, custom_families)
     io.write_tsv(out_bed, BED_HEADER, rows)

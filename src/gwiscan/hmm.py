@@ -68,7 +68,11 @@ def parse_domtbl(cfg: Config, domtbl=None) -> int:
     if not domtbl.exists():
         raise FileNotFoundError(f"domtblout not found: {domtbl} (run hmmscan first)")
 
-    pfam_to_family = io.pfam_to_family(cfg.family_map)
+    # Family/superfamily modes map each Pfam to its curated family. Architecture
+    # mode has no per-domain family — the label IS the HMM's own domain name (e.g.
+    # B_lectin, Pkinase), so the map is empty and every hit uses that name (the
+    # fallback below). architecture.run then combines the domains per protein.
+    pfam_to_family = {} if cfg.is_architecture else io.pfam_to_family(cfg.family_map)
     rows, unmapped = [], set()
 
     with open(domtbl) as fh:
@@ -104,7 +108,7 @@ def parse_domtbl(cfg: Config, domtbl=None) -> int:
         f"[OK] Parsed {len(rows)} domain hits "
         f"({n_prot} proteins, {n_fam} families) -> hmm_hits.tsv"
     )
-    if unmapped:
+    if unmapped and not cfg.is_architecture:
         external.log(
             f"[WARN] {len(unmapped)} Pfam accession(s) not in the family table, "
             f"used raw HMM name instead: {', '.join(sorted(unmapped))}"

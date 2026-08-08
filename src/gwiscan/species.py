@@ -19,7 +19,7 @@ import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
-from . import external, pipeline, setupdb
+from . import external, io, pipeline, setupdb
 from .config import Config
 
 # Per-species OK/FAILED outcomes are persisted here after every multi-species run
@@ -142,6 +142,89 @@ def _species_config(cfg: Config, prefix: str, proteome: str, annotation: str = "
                                PROTEOME=proteome, ANNOTATION=annotation)
 
 
+def _configured_families(cfg: Config) -> list:
+    """Every family the study defines, so the cross-species matrix has a row for each
+    even when a species has zero of it. Architecture names in MODE: architecture,
+    else the family/superfamily table's families."""
+    try:
+        if cfg.is_architecture:
+            from . import architecture
+            return architecture.arch_names(architecture.read_rules(cfg.architecture_map))
+        return [r["family"] for r in io.family_records(cfg.family_map)]
+    except (OSError, ValueError, KeyError):
+        return []
+
+
+def write_combined_summary(cfg: Config, prefixes: list) -> None:
+    """One cross-species summary over the per-species results.
+
+    Reads each species' final_results/<prefix>/gwiscan_results.tsv and writes, to the
+    top-level final_results/:
+      * all_species_summary.tsv  -- families (rows) x species (columns) matrix of the
+        member protein count, with per-family and per-species Totals; every configured
+        family has a row even at zero.
+      * all_species_summary.xlsx -- that matrix, a Superfamily matrix (superfamily mode),
+        and every species' members stacked into one Members sheet (a Species column added).
+      * all_species_members.tsv  -- the stacked members as TSV.
+    Species without a results file (never ran / failed early) are skipped.
+    """
+    import pandas as pd
+
+    final_root = cfg.output_root / "final_results"
+    frames, found = [], []
+    for prefix in prefixes:
+        res = final_root / prefix / "gwiscan_results.tsv"
+        if not res.exists():
+            continue
+        df = io.read_tsv(res, low_memory=False)
+        if "family" not in df.columns or "protein_id" not in df.columns:
+            continue
+        df.insert(0, "species", prefix)
+        frames.append(df)
+        found.append(prefix)
+
+    if not frames:
+        external.log("[multi] No per-species results found; skipping combined summary.")
+        return
+
+    combined = pd.concat(frames, ignore_index=True)
+
+    def _matrix(group_col: str) -> "pd.DataFrame":
+        m = (combined.groupby([group_col, "species"])["protein_id"].nunique()
+             .unstack("species").reindex(columns=found).fillna(0).astype(int))
+        if group_col == "family":                       # show every configured family
+            m = m.reindex(sorted(set(m.index) | set(_configured_families(cfg))), fill_value=0)
+        else:
+            m = m.sort_index()
+        m["Total"] = m.sum(axis=1)
+        m.loc["Total"] = m.sum(axis=0)
+        return m.reset_index().rename(columns={group_col: group_col.capitalize()})
+
+    fam_matrix = _matrix("family")
+    out_tsv = final_root / "all_species_summary.tsv"
+    out_xlsx = final_root / "all_species_summary.xlsx"
+    out_members = final_root / "all_species_members.tsv"
+    final_root.mkdir(parents=True, exist_ok=True)
+
+    # The matrix columns are species prefixes (Ath, Csa, ...) and Family/Total, so
+    # they are written verbatim -- NOT camelCased. The stacked members table keeps
+    # the same camelCase headers as the per-species gwiscan_results.tsv.
+    fam_matrix.to_csv(out_tsv, sep="\t", index=False)
+    io.write_df(combined, out_members, "tsv")
+
+    with pd.ExcelWriter(out_xlsx, engine="openpyxl") as writer:
+        fam_matrix.to_excel(writer, sheet_name="Family_matrix", index=False)
+        if "superfamily" in combined.columns:
+            _matrix("superfamily").to_excel(writer, sheet_name="Superfamily_matrix", index=False)
+        combined.rename(columns=io.to_camel).to_excel(writer, sheet_name="Members", index=False)
+
+    external.log(
+        f"[multi] Combined summary over {len(found)} species ({', '.join(found)}): "
+        f"{combined['protein_id'].nunique()} members -> {out_tsv.name}, "
+        f"{out_xlsx.name}, {out_members.name}"
+    )
+
+
 def _run_one(cfg: Config) -> tuple:
     """Worker: run one species pipeline (shared setup already done). Returns
     (prefix, None) on success or (prefix, error_message) on failure, so one species
@@ -201,6 +284,15 @@ def run(cfg: Config) -> None:
     for prefix, err in results:
         status[prefix] = "FAILED" if err else "OK"
     _write_status(_status_path(cfg), status)
+
+    # Cross-species summary over every manifest species whose results are on disk
+    # (a subset run, or a species that failed only in a late optional stage, still
+    # contributes its finished results). Runs before the failure-raise so it is
+    # always produced.
+    try:
+        write_combined_summary(cfg, [s["prefix"] for s in manifest])
+    except Exception as e:  # noqa: BLE001 - the summary is a convenience, never fatal
+        external.log(f"[multi] [WARN] could not write combined summary: {type(e).__name__}: {e}")
 
     failed = [p for p, e in results if e]
     external.log("=" * 56)

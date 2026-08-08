@@ -20,6 +20,7 @@ import contextlib
 import sys
 
 from . import (
+    architecture,
     candidates,
     confirm,
     coords,
@@ -83,6 +84,33 @@ STAGES = [
     ("provenance", "22 Provenance", lambda cfg: provenance.run(cfg), "22_provenance"),
 ]
 STAGE_KEYS = [key for key, *_ in STAGES]
+
+# Architecture mode (MODE: architecture) identifies members by a Pfam domain
+# COMBINATION with a two-pass hmmscan (primary seed genome-wide, then required on the
+# candidates), then reuses the ordinary annotation pipeline unchanged: InterProScan
+# annotates the final candidates, followed by ProtParam/TargetP/DeepLoc/coords/compile
+# and the domain/tree stages. Only the DIAMOND-based stages, per-family scoring, the
+# proteome DIAMOND db, and the InterProScan-gate `confirm` drop out (architecture.run
+# already writes the final candidates). setup-shared presses the two HMM databases.
+ARCH_DROP = {"setup-db", "search-diamond", "score", "merge", "confirm"}
+
+
+def stages_for(cfg) -> list:
+    """The stage list for this run's MODE. Architecture mode reuses the full pipeline
+    minus the DIAMOND/scoring/confirm stages, with the two-pass hmmscan search
+    (architecture.run) in place of search-hmm."""
+    if not cfg.is_architecture:
+        return STAGES
+    stages = []
+    for key, label, func, logname in STAGES:
+        if key in ARCH_DROP:
+            continue
+        if key == "search-hmm":
+            stages.append(("search-hmm", "01 Two-pass hmmscan (primary + required)",
+                           lambda cfg: architecture.run(cfg), "01_architecture_search"))
+        else:
+            stages.append((key, label, func, logname))
+    return stages
 
 # Stages backed by an OPTIONAL external tool, mapped to the Config attribute
 # naming that tool's binary. If the tool isn't installed `run` auto-skips the
@@ -186,13 +214,16 @@ def run(cfg: Config, include_shared_setup: bool = True) -> None:
     external.log(f" GWIscan - genome-wide identification and annotation pipeline for gene families or superfamilies{tag}")
     external.log("=" * 56)
     external.log(f" Threads         : {cfg.THREADS}")
-    external.log(f" DIAMOND e-value : {cfg.DIAMOND_EVALUE}")
+    if cfg.is_architecture:
+        external.log(f" Mode            : architecture (hmmscan-only, domain combinations)")
+    else:
+        external.log(f" DIAMOND e-value : {cfg.DIAMOND_EVALUE}")
     external.log(f" Project dir     : {cfg.root}")
     if cfg.SPECIES:
         external.log(f" Species         : {cfg.SPECIES}  ({cfg.proteome})")
     external.log("=" * 56)
 
-    stages = [s for s in STAGES if s[0] != "setup-shared" or include_shared_setup]
+    stages = [s for s in stages_for(cfg) if s[0] != "setup-shared" or include_shared_setup]
     skip = set(cfg.SKIP_STAGES or ())
     try:
         selected = plan_stages(stages, cfg.FROM_STAGE, cfg.UNTIL_STAGE, skip)

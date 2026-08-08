@@ -1,0 +1,49 @@
+# ============================================================================
+# GWIscan architecture table — ARCHITECTURE mode (domain combinations)
+# ============================================================================
+# Copy this file to  config/architecture.tsv  and edit it for your study, and set
+#   MODE: architecture   in config.yaml.
+#
+# Architecture mode identifies proteins that carry a COMBINATION of Pfam domains on
+# one chain: a PRIMARY domain that defines and seeds the family, plus one or more
+# REQUIRED domains that must also be present. Both are Pfam HMMs found by hmmscan.
+#
+# The search is two hmmscan passes, so a common domain (e.g. a kinase) is never
+# scanned genome-wide:
+#   1. hmmscan the whole proteome against the PRIMARY HMM(s)  -> candidate proteins.
+#   2. hmmscan only those candidates against the primary+required HMMs, keeping the
+#      ones that also carry every required domain. Those are the final candidates.
+#
+# The final candidates then go through the ordinary annotation pipeline unchanged:
+# InterProScan does the complete domain/GO annotation, then ProtParam, TargetP,
+# DeepLoc, genomic coordinates, and the compiled TSV/XLSX. `family` is the
+# Architecture name, so every output groups by it.
+#
+# One row per architecture (family). TAB-separated. Whole-line '#' comments and
+# blank lines are ignored.
+#
+# COLUMNS
+#   Architecture  Family name. Used verbatim in the outputs. Required and unique.
+#
+#   Primary       The defining Pfam domain that seeds the genome-wide search. One
+#                 slot; give alternatives with '|' (any one seeds). Choose the
+#                 domain that best defines the family (often the rarer/ectodomain,
+#                 so the candidate set stays small). Pfam accession(s) only.
+#
+#   Required      The Pfam domain(s) that must ALSO be present, '+'-separated (AND).
+#                 Each slot may list '|' alternatives (OR), so a domain that two
+#                 models describe is accepted from either, e.g. PF00069|PF07714
+#                 accepts Pkinase OR Pkinase_Tyr. Pfam accession(s) only.
+#
+#   Class         Optional rollup label grouping architectures. Defaults to the
+#                 Architecture name if blank ('-').
+# ----------------------------------------------------------------------------
+# The three classic LecRLK subtypes, seeded on the lectin ectodomain (Pfams from
+# the oat LecRLK study): G-type B_lectin PF01453, L-type Lectin_legB PF00139,
+# C-type Lectin_C PF00059; the required kinase is Pkinase PF00069 or Pkinase_Tyr
+# PF07714. Seed on the kinase instead (Primary PF00069, Required the lectin) if you
+# want the more sensitive net at the cost of more candidates.
+Architecture	Primary	Required	Class
+G-LecRLK	PF01453	PF00069|PF07714	LecRLK
+L-LecRLK	PF00139	PF00069|PF07714	LecRLK
+C-LecRLK	PF00059	PF00069|PF07714	LecRLK

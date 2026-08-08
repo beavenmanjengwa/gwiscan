@@ -42,6 +42,7 @@ DIRECTORY TREE
   |-- config/
   |     |-- family.tsv             family table, MODE: family
   |     |     (or) superfamily.tsv family table, MODE: superfamily
+  |     |     (or) architecture.tsv domain-combination rules, MODE: architecture
   |     |-- species.tsv            species manifest (multi-species runs only)
   |
   |-- input/

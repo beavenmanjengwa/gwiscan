@@ -113,6 +113,12 @@ def _check_config_values(cfg: Config) -> bool:
 def run(cfg: Config) -> None:
     """Executes environment diagnostic validations to assert system and workflow integrity."""
     cfg.ensure_dirs()
+    # Architecture mode is hmmscan-only with its own inputs (the rules table, no
+    # DIAMOND / InterProScan); it has its own lighter pre-flight.
+    if cfg.is_architecture:
+        from . import architecture
+        architecture.preflight(cfg)
+        return
     fail = False
     external.log("[preflight] GWIscan pre-flight check")
     external.log("--------------------------------------")

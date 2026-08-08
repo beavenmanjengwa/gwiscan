@@ -43,11 +43,15 @@ DEFAULTS = {
     # Set it (CLI -o/--output or OUTPUT here) to send outputs to a separate
     # directory; inputs, config, and db are still read from the project directory.
     "OUTPUT": "",
-    # Reporting mode (grouping only — every processing step is identical):
-    #   "family"      — flat families.
-    #   "superfamily" — families grouped under a Superfamily column (superfamily.tsv);
-    #                   adds a superfamily rollup to the results. e.g. Lectin over
-    #                   GNA, Legume, CRA...
+    # Reporting mode:
+    #   "family"       — flat families (one identifying model per family).
+    #   "superfamily"  — families grouped under a Superfamily column (superfamily.tsv);
+    #                    adds a superfamily rollup. e.g. Lectin over GNA, Legume, CRA...
+    #   "architecture" — domain-COMBINATION mode. A protein is classified by the SET
+    #                    of Pfam domains it carries (e.g. LecRLK = a lectin domain AND
+    #                    a kinase domain on the same chain). hmmscan only — the
+    #                    co-occurrence of the component domains is the criterion, so no
+    #                    DIAMOND and no InterProScan. Rules live in architecture.tsv.
     "MODE": "family",
     "DIAMOND_EVALUE": "1e-5",
     "DIAMOND_IDENTITY": 30,        # round 2 min % identity (native seeds; round 1 is E-value only)
@@ -264,11 +268,22 @@ class Config:
         return self.root / "config"
 
     @property
+    def is_architecture(self) -> bool:
+        """True when running the domain-combination mode (MODE: architecture)."""
+        return str(self.MODE).lower() == "architecture"
+
+    @property
     def family_map(self) -> Path:
         """The family table: config/superfamily.tsv in superfamily mode, else
         config/family.tsv. The filename matches MODE."""
         name = "superfamily.tsv" if str(self.MODE).lower() == "superfamily" else "family.tsv"
         return self.config_dir / name
+
+    @property
+    def architecture_map(self) -> Path:
+        """The architecture rules table (config/architecture.tsv), used only in
+        MODE: architecture. One row per domain-combination class."""
+        return self.config_dir / "architecture.tsv"
 
     @property
     def species_manifest(self) -> Path:
@@ -287,6 +302,12 @@ class Config:
     @property
     def hmm_db(self) -> Path:
         return self.hmm_dir / "all_models.hmm"
+
+    @property
+    def primary_hmm_db(self) -> Path:
+        """Architecture mode: the pressed db of just the PRIMARY domain HMM(s), used
+        for the genome-wide seed pass. hmm_db holds primary+required for pass 2."""
+        return self.hmm_dir / "primary_models.hmm"
 
     @property
     def blast_dir(self) -> Path:

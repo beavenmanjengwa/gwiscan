@@ -70,7 +70,9 @@ def run(cfg: Config) -> None:
 
     bed_df = io.read_tsv(bed)
     proteome = SeqIO.to_dict(SeqIO.parse(str(cand_fasta), "fasta"))
-    pfam_to_family = io.pfam_to_family(cfg.family_map)
+    # Architecture mode: the BED's pfam_id column already holds the architecture name
+    # (coordinates come from the members' own hmmscan hits), so no map is needed.
+    pfam_to_family = {} if cfg.is_architecture else io.pfam_to_family(cfg.family_map)
 
     records = assign_domain_ids(bed_df, pfam_to_family, cfg.SPECIES_PREFIX)
 

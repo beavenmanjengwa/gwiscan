@@ -80,6 +80,48 @@ CRA       CRA.hmm     ABL98074.1.fasta
 EUL       -           ABW73993.1.fasta
 ```
 
+## Architecture mode (domain combinations)
+
+The family/superfamily modes call a protein per domain hit. `MODE: architecture`
+identifies proteins that carry a *combination* of Pfam domains on one chain: a
+**primary** domain that defines and seeds the family, plus one or more **required**
+domains that must also be present. Both are Pfam HMMs.
+
+The search is two hmmscan passes, so a common required domain (a kinase, say) is
+never scanned genome-wide:
+
+1. hmmscan the whole proteome against the **primary** HMM(s) to get candidates.
+2. hmmscan only those candidates against the primary+required HMMs, keeping the
+   ones that also carry every required domain. Those are the final candidates.
+
+The final candidates then run through the ordinary annotation pipeline unchanged:
+InterProScan does the complete domain/GO annotation, then ProtParam, TargetP,
+DeepLoc, genomic coordinates, and the compiled TSV/XLSX. `family` is the
+architecture name, so every output groups by it.
+
+Set `MODE: architecture` in `config.yaml`, then copy
+`config/architecture.tsv.example` to `config/architecture.tsv`. One row per
+architecture:
+
+| Column | Meaning |
+|--------|---------|
+| `Architecture` | Family name, used in the outputs. |
+| `Primary` | The defining Pfam domain that seeds the genome-wide search. One slot; alternatives allowed with `\|`. Pick the domain that best defines the family (often the rarer one, to keep the candidate set small). |
+| `Required` | Pfam domain(s) that must also be present, `+`-separated (AND). Any slot may list alternatives with `\|` (OR), so `PF00069\|PF07714` accepts either Pkinase or Pkinase_Tyr. |
+| `Class` | Optional rollup label grouping architectures. |
+
+```
+Architecture   Primary   Required          Class
+G-LecRLK       PF01453   PF00069|PF07714   LecRLK
+L-LecRLK       PF00139   PF00069|PF07714   LecRLK
+C-LecRLK       PF00059   PF00069|PF07714   LecRLK
+```
+
+Run it with `gwiscan run -C project/ --mode architecture` (set `EBI_EMAIL`, or
+`INTERPRO_MODE: local`, since InterProScan annotates the final candidates). The
+results are the usual `final_results/gwiscan_results.tsv`/`.xlsx`, with `family`
+holding the architecture and the domain architecture filled in from InterProScan.
+
 ## Usage
 
 ```bash
@@ -117,6 +159,17 @@ Gma      genomes/Gmax.fasta
 `SPECIES_PARALLEL` sets how many run at once (0 means auto). One species failing
 does not stop the others; re-run a subset with `--only-species Ath,Gma` or just
 the failed ones with `--retry-failed`.
+
+After the species finish, a cross-species summary is written to the top-level
+`final_results/`:
+
+- `all_species_summary.tsv` / `.xlsx` — a families (rows) by species (columns)
+  matrix of the member protein count, with per-family and per-species totals. Every
+  configured family has a row, so families absent in a species show as 0.
+- `all_species_members.tsv` — every species' members stacked into one table with a
+  `species` column.
+
+This works in every mode (in architecture mode the rows are the architectures).
 
 There is also a Snakemake workflow that runs the same stages as a resumable,
 parallel pipeline:

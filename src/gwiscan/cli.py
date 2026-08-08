@@ -17,6 +17,7 @@ import argparse
 
 from . import (
     __version__,
+    architecture,
     candidates,
     confirm,
     coords,
@@ -50,6 +51,7 @@ COMMANDS = {
     "search-hmm": ("Run hmmscan and parse hits", hmm.run),
     "search-diamond": ("Run two-round DIAMOND BLASTp", diamond.run),
     "merge": ("Merge HMM + DIAMOND candidates", candidates.run),
+    "architecture": ("Two-pass hmmscan for domain-combination candidates (MODE: architecture)", architecture.run),
     "score": ("Per-family detectability profile (hmmscan vs DIAMOND)", score.run),
     "protparam": ("Physicochemical properties (ProtParam)", protparam.run),
     "targetp": ("Signal/transit peptides (TargetP 2.0)", targetp.run),
@@ -134,8 +136,9 @@ def _add_global_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("-p", "--threads", dest="THREADS", type=int, default=None,
                    help="Worker threads / CPUs (default 4)")
     p.add_argument("--mode", dest="MODE", default=None,
-                   choices=["family", "superfamily"],
-                   help="Reporting mode: family (flat) or superfamily (grouped rollup)")
+                   choices=["family", "superfamily", "architecture"],
+                   help="Mode: family (flat), superfamily (grouped rollup), or "
+                        "architecture (domain-combination, hmmscan-only)")
     p.add_argument("--evalue", dest="DIAMOND_EVALUE", default=None,
                    help="DIAMOND E-value cutoff")
     p.add_argument("--identity", dest="DIAMOND_IDENTITY", type=int, default=None,

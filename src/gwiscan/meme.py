@@ -45,12 +45,20 @@ def run(cfg: Config) -> None:
 
         out_family = meme_dir / family
         external.log(f"[meme] {family}: {n_seqs} sequences -> {out_family.name}/")
-        external.run([
-            cfg.MEME_BIN, domain_fasta,
-            "-protein",
-            "-nmotifs", cfg.MEME_NMOTIFS,
-            "-oc", out_family,
-        ])
+        # MEME is a leaf stage (nothing consumes its output), and its post-run image
+        # conversion shells out to Ghostscript, which fails on some environments
+        # (e.g. a project path containing spaces: "undefinedfilename"). A MEME failure
+        # must not sink the whole species -- warn and move to the next family.
+        try:
+            external.run([
+                cfg.MEME_BIN, domain_fasta,
+                "-protein",
+                "-nmotifs", cfg.MEME_NMOTIFS,
+                "-oc", out_family,
+            ])
+        except RuntimeError as e:
+            external.log(f"[WARN] {family}: MEME failed, skipping (motifs are optional). {e}")
+            continue
         external.log(f"[OK] {family}: MEME written -> {out_family.name}/")
 
     external.log("[meme] MEME step done.")
