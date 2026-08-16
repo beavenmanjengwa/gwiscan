@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gwiscan"
-version = "1.0.0"
+version = "1.0.1"
 description = "Genome-wide identification and annotation pipeline for gene families or superfamilies"
 readme = "README.md"
 requires-python = ">=3.9"
