@@ -21,17 +21,13 @@ conda activate gwiscan
 Or build the environment from source:
 
 ```bash
-mamba env create -f environment.yml      # conda tools + Python deps (mamba preferred: faster solve)
+mamba env create -f environment.yml      # or 'conda env create' (mamba resolves dependencies faster)
 conda activate gwiscan
 pip install -e .                         # the `gwiscan` command
 ```
 
-`mamba` is recommended over `conda` for the environment step — it solves the
-bioconda dependency tree in seconds rather than minutes. `conda env create` also
-works if you don't have mamba.
-
 Either way you get `HMMER`, `diamond`, `seqkit`, `mafft`, `clipkit`, `iqtree`,
-`meme`, `weblogo`, and R (for the ProtParam figures). DeepTMHMM runs through
+`meme`, `weblogo`, and R. DeepTMHMM runs through
 `pybiolib` (`pip install pybiolib`; already included in the source environment). InterProScan uses the EBI web service
 by default (set `EBI_EMAIL`); to run it offline, install InterProScan and set
 `INTERPRO_MODE: local` and `INTERPROSCAN_BIN` if it's not executable at system level.
@@ -41,7 +37,7 @@ by default (set `EBI_EMAIL`); to run it offline, install InterProScan and set
 installed manually, as they need an academic license from DTU. Install each one
 (its own conda environment is easiest) and add its path to `TARGETP_BIN` and
 `DEEPLOC_BIN` (in the config file, an env var, or `--targetp-bin` /
-`--deeploc-bin`). Any path works.
+`--deeploc-bin`).
 
 Before a long run, check the tools, packages, and inputs with:
 
@@ -91,8 +87,8 @@ EUL       -           ABW73993.1.fasta
 
 ## Architecture mode (domain combinations)
 
-This mode identifies genes that encode proteins with a given domain architecture, a
-*combination* of Pfam domains on one chain: a **primary** domain that defines and
+This mode identifies genes that encode proteins with a given domain architecture: a
+**primary** domain that defines and
 seeds the family, plus one or more **required** domains that must also be present.
 Both are Pfam HMMs.
 
@@ -113,7 +109,7 @@ architecture:
 | Column | Meaning |
 |--------|---------|
 | `Architecture` | Family name, used in the outputs. |
-| `Primary` | The defining Pfam domain that seeds the genome-wide search. One slot; alternatives allowed with `\|`. Pick the domain that best defines the family (often the rarer one, to keep the candidate set small). |
+| `Primary` | The defining Pfam domain that seeds the genome-wide search. One slot; alternatives allowed with `\|`. Pick the domain that best defines the family. |
 | `Required` | Pfam domain(s) that must also be present, `+`-separated (AND). Any slot may list alternatives with `\|` (OR), so `PF00069\|PF07714` accepts either Pkinase or Pkinase_Tyr. |
 | `Class` | Optional rollup label grouping architectures. |
 
@@ -149,16 +145,11 @@ gwiscan run -C project/ --skip weblogo         # skip a stage
 gwiscan run -C project/ --add iqtree           # add the off-by-default tree
 ```
 
-A default run stops at the annotation table. The phylogeny workflow — ClipKIT
-trimming (`trim`) and the per-family tree (`iqtree`) — is **off by default**: it is
-slow and adds nothing to `gwiscan_results.tsv`. Turn it on with `--add iqtree` (or
-`ADD_STAGES: [iqtree]` in `config.yaml`). Because `trim` exists only to feed
-`iqtree`, adding `iqtree` pulls in `trim` automatically, so you never run one
-without the other. `gwiscan trim` and `gwiscan iqtree` still work on their own.
+A default run stops at the annotation table. Phylogenetic tree building is off by
+default; enable it with `--add iqtree` (or `ADD_STAGES: [iqtree]` in `config.yaml`).
 
-`weblogo` and `meme` are optional: if the tool is not installed the stage is
-skipped instead of stopping the run. Point to any tool with its `*_BIN` setting.
-All the flags above also work as `config.yaml` settings or env vars.
+`weblogo` and `meme` are optional and skipped if their tool is not installed. Any
+flag above also works as a `config.yaml` setting or env var.
 
 To scan several species, add `config/species.tsv` (`Prefix`, `Proteome`):
 
@@ -220,18 +211,23 @@ unrelated value already in your environment.
 
 ## Outputs
 
-| File | What it is |
-|------|-------------|
-| `final_results/gwiscan_results.tsv` / `.xlsx` | The final results table (the `.xlsx` groups the columns by source tool). When an annotation is supplied it includes the chromosomal locus and gene structure (`nIntrons`, i.e. exon count − 1) for each member. |
-| `final_results/gwiscan_members.gff3` | The members as genome features (with the intron count as an attribute) |
-| `final_results/provenance.txt` | Tool versions, settings, input checksums |
-| `intermediate/candidates_merged.tsv` / `.fasta` | The merged HMM and DIAMOND candidates |
-| `intermediate/interproscan.tsv` | Domain and GO annotations |
-| `intermediate/{protparam,targetp,deeptmhmm,deeploc}.tsv` | The per-tool annotation tables |
-| `intermediate/msa/{Family}_aligned.fasta` | Per-family MAFFT alignment |
-| `intermediate/weblogo/`, `meme/`, `trees/` | Per-family logos, motifs, and trees (`trim`/`trees` only when the tree workflow is enabled with `--add iqtree`) |
+Deliverables go to `final_results/`; working files to `intermediate/`. In
+multi-species runs each species has its own `final_results/<Prefix>/` and
+`intermediate/<Prefix>/`.
 
-Each stage writes a log under `logs/` (one folder per species in multi-species runs).
+| Path | What it is |
+|------|------------|
+| `final_results/gwiscan_results.tsv` / `.xlsx` | The annotation table, one row per member (the `.xlsx` groups columns by source). Genomic coordinates are added when a GFF or GTF annotation is provided. |
+| `final_results/gwiscan_members.gff3` | The members as genome features. |
+| `final_results/provenance.txt` | Tool versions, settings, and input checksums. |
+| `intermediate/candidates/candidates_merged.tsv` / `.fasta` | Merged candidates from the HMM and BLAST searches. |
+| `intermediate/interproscan/interproscan.tsv` | Domain and GO annotations. |
+| `intermediate/protparam/protparam.tsv` | Physicochemical properties. |
+| `intermediate/prediction/{targetp,deeptmhmm,deeploc}.tsv` | Signal peptide, transmembrane topology, and subcellular localization. |
+| `intermediate/msa/{Family}_aligned.fasta` | Per-family alignment. |
+| `intermediate/weblogo/`, `meme/`, `trees/` | Per-family logos, motifs, and trees (`trees/` only with `--add iqtree`). |
+
+Each stage also writes a log under `logs/` (one folder per species in multi-species runs).
 
 ## Development
 
