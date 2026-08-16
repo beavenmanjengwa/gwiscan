@@ -174,6 +174,13 @@ def _run_api(cfg: Config, cand_fasta) -> tuple:
     n_chunks = (len(records) + CHUNK_SIZE - 1) // CHUNK_SIZE
     external.log(f"[OK] Submitting {n_chunks} job(s) to EBI InterProScan 6 API...")
 
+    # One job in flight at a time: submit a chunk, wait for it, fetch it, then move
+    # to the next. EMBL-EBI's Job Dispatcher asks that no more than a handful of jobs
+    # run concurrently and that you not submit more until the running ones finish;
+    # keeping a single job open per species means several species running in parallel
+    # (SPECIES_PARALLEL) still stay well within that fair-use limit. Do NOT change this
+    # to submit every chunk up front -- that stacks a species' whole chunk count as
+    # concurrent jobs and, multiplied across parallel species, breaches the limit.
     all_lines, gff_texts = [], []
     for i in range(n_chunks):
         chunk = records[i * CHUNK_SIZE:(i + 1) * CHUNK_SIZE]
@@ -185,9 +192,21 @@ def _run_api(cfg: Config, cand_fasta) -> tuple:
 
         status = _poll(job_id)
         external.log(f"[Chunk {i + 1}/{n_chunks}] Final status: {status}")
+        # A chunk that does not FINISH leaves its sequences unannotated. The confirm
+        # stage keeps a Pfam family's members only when their Pfam is reported here,
+        # so a missing annotation is indistinguishable from a genuine non-match: the
+        # members would be dropped and the run would still exit 0 with a plausible
+        # but incomplete table. Stop with a clear, resumable error instead. (The
+        # session already retries transient blips, so reaching here means a real
+        # failure, not a momentary one.)
         if status != "FINISHED":
-            external.log(f"[WARN] Job {job_id} did not finish successfully. Skipping.")
-            continue
+            raise RuntimeError(
+                f"InterProScan chunk {i + 1}/{n_chunks} (job {job_id}) did not finish: "
+                f"status {status}. Its {len(chunk)} sequence(s) would be left unannotated. "
+                f"Rather than silently drop those members, the run stops here. Re-run this "
+                f"stage once EBI is reachable (gwiscan run --from-stage interpro ...), or "
+                f"switch to a local install (INTERPRO_MODE=local)."
+            )
 
         # Discover result-type ids for this job, then fetch TSV (pipeline table)
         # and GFF3 (raw feature output) using the ids the API actually offers.
@@ -195,12 +214,19 @@ def _run_api(cfg: Config, cand_fasta) -> tuple:
         tsv_id = "tsv" if "tsv" in types else None
         gff_id = next((t for t in types if t.lower() in ("gff", "gff3")), None)
 
-        if tsv_id:
-            lines = [ln for ln in _fetch_result(job_id, tsv_id).strip().split("\n") if ln]
-            all_lines.extend(lines)
-            external.log(f"[Chunk {i + 1}/{n_chunks}] Retrieved {len(lines)} TSV rows.")
-        else:
-            external.log(f"[WARN] Job {job_id}: no 'tsv' result type ({types}).")
+        # No TSV on a FINISHED job is as damaging as an unfinished chunk (same
+        # silent-drop), so it is likewise fatal. A missing GFF only costs the
+        # auxiliary feature file, which downstream stages do not read, so it stays
+        # a warning.
+        if not tsv_id:
+            raise RuntimeError(
+                f"InterProScan chunk {i + 1}/{n_chunks} (job {job_id}) finished but offers "
+                f"no 'tsv' result type ({types}); its {len(chunk)} sequence(s) cannot be "
+                f"annotated. Re-run the interpro stage, or use INTERPRO_MODE=local."
+            )
+        lines = [ln for ln in _fetch_result(job_id, tsv_id).strip().split("\n") if ln]
+        all_lines.extend(lines)
+        external.log(f"[Chunk {i + 1}/{n_chunks}] Retrieved {len(lines)} TSV rows.")
 
         if gff_id:
             gff_texts.append(_fetch_result(job_id, gff_id))
@@ -208,7 +234,7 @@ def _run_api(cfg: Config, cand_fasta) -> tuple:
             external.log(f"[WARN] Job {job_id}: no GFF result type ({types}).")
 
         if i < n_chunks - 1:
-            time.sleep(5)  # be polite to EBI servers
+            time.sleep(5)  # be polite to EBI between jobs
 
     return all_lines, gff_texts
 

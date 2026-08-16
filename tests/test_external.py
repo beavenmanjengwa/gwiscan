@@ -1,68 +1,83 @@
-"""Tests for external.py -- the subprocess wrapper every stage funnels through.
-
-A regression here (wrong check field, swallowed stderr, bad stringification)
-would silently affect every external-tool stage at once, so the wrapper's own
-behaviour is worth locking independently of any one stage.
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_external.py - Tests for external.py, the subprocess wrapper every stage funnels through.    #
+#                                                                                                  #
+# A regression here (wrong check field, swallowed stderr, bad stringification) would affect every  #
+# external-tool stage at once, so the wrapper's own behaviour is verified independently of any one #
+# stage.                                                                                           #
+#                                                                                                  #
+####################################################################################################
 """
 
 import subprocess
+import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 from gwiscan import external
 
-
-def _fake_run(monkeypatch, returncode=0, stdout="out", stderr="err"):
-    """Patch subprocess.run to record its call and return a canned result."""
-    seen = {}
-
-    def _run(cmd, **kwargs):
-        seen["cmd"] = cmd
-        seen["kwargs"] = kwargs
-        return SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
-
-    monkeypatch.setattr(external.subprocess, "run", _run)
-    return seen
+# Real subprocesses (via this interpreter) rather than a mocked subprocess: the
+# wrapper now streams a live pipe, so exercising the real API is both simpler and
+# a stronger guard than asserting Popen was called a certain way.
+_PY = sys.executable
 
 
-def test_run_stringifies_command_elements(monkeypatch, capsys):
-    seen = _fake_run(monkeypatch)
-    external.run(["tool", Path("/a/b"), 42])
-    # every element passed to subprocess.run is a str (Paths/ints coerced)
-    assert seen["cmd"] == ["tool", "/a/b", "42"]
-    assert all(isinstance(c, str) for c in seen["cmd"])
+def _emit(out="", err="", code=0):
+    """A portable command that writes given text to stdout/stderr and exits code."""
+    script = (
+        f"import sys\n"
+        f"sys.stdout.write({out!r})\n"
+        f"sys.stderr.write({err!r})\n"
+        f"sys.exit({code})\n"
+    )
+    return [_PY, "-c", script]
 
 
-def test_run_merges_stdout_stderr_when_no_stdout_path(monkeypatch, capsys):
-    _fake_run(monkeypatch, stdout="hello-merged")
-    external.run(["tool"])
-    # merged mode: stdout+stderr combined onto our stdout, echoed
-    assert "hello-merged" in capsys.readouterr().out
+def test_run_stringifies_command_elements(capsys):
+    # A Path and an int in the command must be coerced to str (Popen rejects ints);
+    # the child echoes them back so we can see they arrived intact.
+    script = "import sys; print(sys.argv[1]); print(sys.argv[2])"
+    result = external.run([_PY, "-c", script, Path("/a/b"), 42])
+    assert "/a/b" in result.stdout
+    assert "42" in result.stdout
 
 
-def test_run_routes_stdout_to_file_and_echoes_only_stderr(monkeypatch, capsys, tmp_path):
-    seen = _fake_run(monkeypatch, stdout="TO_FILE", stderr="ONLY_STDERR")
+def test_run_merges_stdout_stderr_when_no_stdout_path(capsys):
+    result = external.run(_emit(out="hello-out\n", err="hello-err\n"))
+    printed = capsys.readouterr().out
+    # merged mode: both streams echoed live AND captured on result.stdout
+    assert "hello-out" in printed and "hello-err" in printed
+    assert "hello-out" in result.stdout and "hello-err" in result.stdout
+
+
+def test_run_routes_stdout_to_file_and_echoes_only_stderr(capsys, tmp_path, monkeypatch):
+    # Markers come from the environment so they appear only in the child's runtime
+    # output, not in the echoed [CMD] line (which prints the script source).
+    monkeypatch.setenv("GW_OUT", "TO_FILE")
+    monkeypatch.setenv("GW_ERR", "ONLY_STDERR")
+    script = ("import os, sys\n"
+              "sys.stdout.write(os.environ['GW_OUT'] + '\\n')\n"
+              "sys.stderr.write(os.environ['GW_ERR'] + '\\n')\n")
     out_file = tmp_path / "out.txt"
-    external.run(["tool"], stdout_path=out_file)
-    # with stdout_path, subprocess.run is told to write stdout to the file handle
-    assert "stdout" in seen["kwargs"]
-    # and only stderr is echoed to our stdout
+    result = external.run([_PY, "-c", script], stdout_path=out_file)
+    # stdout went to the file, not the console; stderr streamed to the console
+    assert "TO_FILE" in out_file.read_text()
     printed = capsys.readouterr().out
     assert "ONLY_STDERR" in printed
     assert "TO_FILE" not in printed
+    assert result.stderr == "ONLY_STDERR\n"
 
 
-def test_run_raises_on_nonzero_with_command_in_message(monkeypatch, capsys):
-    _fake_run(monkeypatch, returncode=2)
-    with pytest.raises(RuntimeError, match=r"exit 2.*failing-tool"):
-        external.run(["failing-tool", "--flag"])
+def test_run_raises_on_nonzero_with_command_in_message(capsys):
+    with pytest.raises(RuntimeError, match=r"exit 3"):
+        external.run(_emit(code=3))
 
 
-def test_run_check_false_does_not_raise(monkeypatch, capsys):
-    _fake_run(monkeypatch, returncode=2)
-    result = external.run(["failing-tool"], check=False)  # must not raise
+def test_run_check_false_does_not_raise(capsys):
+    result = external.run(_emit(code=2), check=False)   # must not raise
     assert result.returncode == 2
 
 
@@ -95,13 +110,24 @@ def test_require_ok_when_available(monkeypatch):
 
 
 def test_run_real_subprocess_roundtrip():
-    # One un-mocked call to catch signature drift against the real subprocess API.
-    result = external.run(["true"])
-    assert result.returncode == 0
+    # Un-mocked calls to catch signature drift against the real subprocess API.
+    assert external.run(_emit(code=0)).returncode == 0
     with pytest.raises(RuntimeError):
-        external.run(["false"])
+        external.run(_emit(code=1))
     # sanity: subprocess is really the stdlib module
     assert external.subprocess is subprocess
+
+
+def test_run_streams_all_lines_in_order(capsys):
+    # Every line of a multi-line output is echoed, in order (live streaming, not a
+    # single dump), and fully captured on the result.
+    script = "import sys\nfor i in range(5): print('line', i)\n"
+    result = external.run([_PY, "-c", script])
+    printed = capsys.readouterr().out
+    for i in range(5):
+        assert f"line {i}" in printed
+    assert printed.index("line 0") < printed.index("line 4")
+    assert result.stdout.count("line ") == 5
 
 
 # --- per-process log line prefix (multi-species interleaving) -----------------

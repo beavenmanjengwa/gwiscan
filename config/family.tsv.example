@@ -1,6 +1,6 @@
-# ============================================================================
-# GWIscan family table — FAMILY mode (one flat list of families)
-# ============================================================================
+# ===================================================================================#
+# GWIscan family table — FAMILY mode (one flat list of families)                     #
+# ===================================================================================#
 # Copy this file to  config/family.tsv  and edit it for your study families,
 # and set  MODE: family  in config.yaml.
 #
@@ -33,7 +33,9 @@
 #
 # Rule: InterProScan runs ONLY for families whose PfamModel is a Pfam accession.
 # Custom-HMM and DIAMOND-only families never touch InterProScan.
-# ----------------------------------------------------------------------------
+#
+# -------------------------------------------------------------------------------------
+#
 Family	PfamModel	BlastModel
 # specific Pfam -> hmmscan + DIAMOND, InterProScan-confirmed:
 GNA	PF01453	AAA33346.1.fasta

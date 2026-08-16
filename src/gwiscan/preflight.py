@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import importlib
 import shutil
+from pathlib import Path
 
-from . import external, io
+from . import external, hmm, io
 from .config import Config
 
 # (binary, version command) for tools that must be present.
@@ -64,10 +65,88 @@ def _check_family_reference_files(cfg: Config) -> bool:
                 external.log(f"[MISSING] custom HMM for '{family}' not found: {custom_hmm} "
                              f"(build it and place it in db/hmm/)")
                 missing = True
+            elif r["hmm_press"]:
+                # An identifying custom HMM must carry GA thresholds, or hmmscan
+                # --cut_ga aborts the whole search once it is pressed in. Catch it
+                # here rather than mid-run with HMMER's terse "GA unavailable" error.
+                ga_error = hmm.custom_hmm_ga_error(custom_hmm, family)
+                if ga_error:
+                    external.log(f"[MISSING] {ga_error}")
+                    missing = True
 
     if not missing:
         external.log(f"[OK] family reference files present ({len(records)} families)")
     return missing
+
+
+def _duplicate_fasta_ids(path) -> list:
+    """Sequence ids (the first header token) that appear more than once in a FASTA.
+
+    merge/confirm/architecture index the proteome with SeqIO.to_dict, which raises
+    on a duplicate id partway through the run with a terse Biopython message;
+    preflight uses this to surface the offending ids up front instead."""
+    from collections import Counter
+    ids = []
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            if line.startswith(">"):
+                parts = line[1:].split()
+                ids.append(parts[0] if parts else "")
+    return sorted(i for i, count in Counter(ids).items() if count > 1)
+
+
+def _check_one_proteome(path: Path, label: str) -> bool:
+    """Validate a single proteome FASTA: exists, has records, unique ids. Returns
+    True on any problem, logging a labelled message for each."""
+    if not path.exists():
+        external.log(f"[MISSING] {label} proteome not found: {path}")
+        return True
+    with open(path, encoding="utf-8") as handle:
+        n = sum(1 for line in handle if line.startswith(">"))
+    if n == 0:
+        external.log(f"[ERROR] {label} proteome contains no FASTA records: {path}")
+        return True
+    external.log(f"[OK] {label} proteome: {n} sequences")
+    dup = _duplicate_fasta_ids(path)
+    if dup:
+        external.log(f"[MISSING] {label} proteome has {len(dup)} duplicate sequence id(s) "
+                     f"(e.g. {', '.join(dup[:5])}); ids must be unique because the pipeline "
+                     f"indexes the proteome by id. Deduplicate the FASTA.")
+        return True
+    return False
+
+
+def _check_proteomes(cfg: Config) -> bool:
+    """Validate the run's input proteome(s). Returns True on any problem.
+
+    Multi-species runs (config/species.tsv present, and not already inside a single
+    species' sub-run) have no single input/proteome.fasta -- each proteome comes from
+    the manifest -- so every manifest species' proteome is validated instead, plus a
+    warning for any missing annotation. Otherwise the single input proteome is checked."""
+    if cfg.species_manifest.exists() and not cfg.SPECIES:
+        from . import species as species_mod
+        try:
+            manifest = species_mod.read_species_manifest(cfg.species_manifest)
+        except Exception as e:  # noqa: BLE001 - a bad manifest should fail preflight cleanly
+            external.log(f"[MISSING] species manifest could not be parsed: {e}")
+            return True
+        bad = False
+        for entry in manifest:
+            proteome = Path(entry["proteome"])
+            proteome = proteome if proteome.is_absolute() else (cfg.root / proteome)
+            bad = _check_one_proteome(proteome, entry["prefix"]) or bad
+            annotation = entry.get("annotation")
+            if annotation:
+                ann = Path(annotation)
+                ann = ann if ann.is_absolute() else (cfg.root / ann)
+                if not ann.exists():
+                    external.log(f"[WARN] {entry['prefix']}: annotation not found: {ann} "
+                                 f"(this species runs without chromosomal coordinates)")
+        if not bad:
+            external.log(f"[OK] {len(manifest)} species proteome(s) present "
+                         f"({', '.join(e['prefix'] for e in manifest)})")
+        return bad
+    return _check_one_proteome(cfg.proteome, "input")
 
 
 def _check_config_values(cfg: Config) -> bool:
@@ -95,6 +174,9 @@ def _check_config_values(cfg: Config) -> bool:
          "must be an integer >= 1"),
         ("SPECIES_PARALLEL", cfg.SPECIES_PARALLEL, lambda v: int(v) >= 0,
          "must be an integer >= 0 (0 = auto)"),
+        ("DEEPTMHMM_MODE", cfg.DEEPTMHMM_MODE,
+         lambda v: str(v).strip().lower() in {"biolib", "local"},
+         "must be 'biolib' or 'local'"),
     ]
     bad = False
     for label, value, ok, rule in checks:
@@ -113,6 +195,12 @@ def _check_config_values(cfg: Config) -> bool:
 def run(cfg: Config) -> None:
     """Executes environment diagnostic validations to assert system and workflow integrity."""
     cfg.ensure_dirs()
+    # Validate before either mode-specific pre-flight path: architecture has its
+    # own shorter pre-flight and would otherwise not reach _check_config_values.
+    if str(cfg.DEEPTMHMM_MODE).strip().lower() not in {"biolib", "local"}:
+        raise RuntimeError(
+            f"invalid DEEPTMHMM_MODE {cfg.DEEPTMHMM_MODE!r}; use 'biolib' or 'local'"
+        )
     # Architecture mode is hmmscan-only with its own inputs (the rules table, no
     # DIAMOND / InterProScan); it has its own lighter pre-flight.
     if cfg.is_architecture:
@@ -134,7 +222,7 @@ def run(cfg: Config) -> None:
     # a PATH name or an absolute path (weblogo/meme/iqtree/targetp/deeploc bins), so
     # external.available accepts either.
     for opt in (cfg.TARGETP_BIN, cfg.DEEPLOC_BIN, "biolib",
-                cfg.WEBLOGO_BIN, cfg.MEME_BIN, cfg.TRIMAL_BIN, cfg.IQTREE_BIN,
+                cfg.WEBLOGO_BIN, cfg.MEME_BIN, cfg.CLIPKIT_BIN, cfg.IQTREE_BIN,
                 cfg.RSCRIPT_BIN):
         if external.available(opt):
             external.log(f"[OK] {opt} found")
@@ -149,18 +237,9 @@ def run(cfg: Config) -> None:
             external.log(f"[MISSING] python package not importable: {pkg}")
             fail = True
 
-    if not cfg.proteome.exists():
-        external.log(f"[MISSING] input proteome not found: {cfg.proteome}")
-        fail = True
-    else:
-        # Count FASTA records by header lines.
-        with open(cfg.proteome, encoding="utf-8") as handle:
-            n = sum(1 for line in handle if line.startswith(">"))
-        if n == 0:
-            external.log(f"[ERROR] {cfg.proteome} contains no FASTA records")
-            fail = True
-        else:
-            external.log(f"[OK] input proteome: {n} sequences")
+    # In multi-species mode the proteomes come from config/species.tsv, not the
+    # single-species input/proteome.fasta; _check_proteomes handles both.
+    fail = _check_proteomes(cfg) or fail
 
     if not cfg.family_map.exists():
         external.log(f"[MISSING] family table not found: {cfg.family_map} "

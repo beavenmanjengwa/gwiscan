@@ -1,6 +1,12 @@
-"""Tests for GO id -> name / namespace mapping from go-basic.obo.
-
-InterProScan reports GO ids only; these map them to names and split by aspect.
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_go.py - GO id -> name / namespace mapping tests (go-basic.obo).                             #
+#                                                                                                  #
+# InterProScan reports GO ids only; these map them to names and split by aspect.                   #
+#                                                                                                  #
+####################################################################################################
 """
 
 from gwiscan.go import clean_ids, names_by_aspect, names_for, parse_obo

@@ -1,31 +1,40 @@
 # GWIscan (Genome-Wide Identification Scan)
 
-Genome-wide identification and annotation pipeline for gene families or superfamilies. You
-list the families in a config table, so it works for any families. The bundled
-example is a set of plant lectins.
-
-For each family it runs DIAMOND BLASTp, and for families that have a profile HMM
-it also runs HMMER `hmmscan`. It then checks the candidates with InterProScan and
-annotates them with physicochemical properties, signal and transit peptides,
-transmembrane topology, subcellular localization, and domain and GO terms.
-Finally it aligns each family and builds conservation logos, MEME motifs, and
-IQ-TREE trees. It is one Python package with a single command, `gwiscan`, whose
-subcommands are the pipeline stages. You can run one proteome, or many species at
-once.
+GWIscan is a pipeline for the genome-wide identification and annotation of gene
+families and superfamilies which combines BLAST, profile hidden Markov models, and
+InterProScan. It runs in family, superfamily, or architecture modes, on a single
+proteome or across multiple species. It provides detailed annotation features
+including gene coordinates, domain architecture, physicochemical properties,
+signal-peptide and transmembrane topology, subcellular localization, and GO terms.
+It can also perform multiple sequence alignment, MEME motif discovery, and
+phylogenetic tree generation.
 
 ## Installation
 
+Install from Bioconda (pulls in the search and alignment tools automatically):
+
 ```bash
-conda env create -f environment.yml      # conda tools + Python deps
+conda create -n gwiscan -c bioconda -c conda-forge gwiscan
+conda activate gwiscan
+```
+
+Or build the environment from source:
+
+```bash
+mamba env create -f environment.yml      # conda tools + Python deps (mamba preferred: faster solve)
 conda activate gwiscan
 pip install -e .                         # the `gwiscan` command
 ```
 
-This puts all the conda tools in the `gwiscan` environment, ready to use: HMMER,
-`diamond`, `seqkit`, `mafft`, `trimal`, `iqtree`, `meme`, `weblogo`, and
-`pybiolib` (which runs DeepTMHMM). InterProScan uses the EBI web service by
-default (nothing to install; you just set `EBI_EMAIL`). To run it offline, install
-InterProScan and set `INTERPRO_MODE: local` and `INTERPROSCAN_BIN`.
+`mamba` is recommended over `conda` for the environment step — it solves the
+bioconda dependency tree in seconds rather than minutes. `conda env create` also
+works if you don't have mamba.
+
+Either way you get `HMMER`, `diamond`, `seqkit`, `mafft`, `clipkit`, `iqtree`,
+`meme`, `weblogo`, and R (for the ProtParam figures). DeepTMHMM runs through
+`pybiolib` (`pip install pybiolib`; already included in the source environment). InterProScan uses the EBI web service
+by default (set `EBI_EMAIL`); to run it offline, install InterProScan and set
+`INTERPRO_MODE: local` and `INTERPROSCAN_BIN` if it's not executable at system level.
 
 [TargetP 2.0](https://services.healthtech.dtu.dk/services/TargetP-2.0/) and
 [DeepLoc 2.1](https://services.healthtech.dtu.dk/services/DeepLoc-2.1/) should be
@@ -70,7 +79,7 @@ The columns are:
 | Column | Meaning |
 |--------|---------|
 | `Family` | Family name. Used in the outputs and domain ids (for example `GNA` gives `AthGNA001.1`). |
-| `PfamModel` | A Pfam accession (`PF01453`), a custom HMM file in `db/hmm/` (`name.hmm`), or `-` for none. |
+| `PfamModel` | A Pfam accession (`PF01453`), a custom HMM file in `db/hmm/` (`name.hmm`), or `-` for none. A custom identifying HMM must declare GA (gathering) thresholds, because the HMM search runs `hmmscan --cut_ga`; preflight checks this and tells you how to fix it. |
 | `BlastModel` | The DIAMOND query FASTA in `db/blast/`. Every family needs one. |
 
 ```
@@ -82,22 +91,20 @@ EUL       -           ABW73993.1.fasta
 
 ## Architecture mode (domain combinations)
 
-The family/superfamily modes call a protein per domain hit. `MODE: architecture`
-identifies proteins that carry a *combination* of Pfam domains on one chain: a
-**primary** domain that defines and seeds the family, plus one or more **required**
-domains that must also be present. Both are Pfam HMMs.
+This mode identifies genes that encode proteins with a given domain architecture, a
+*combination* of Pfam domains on one chain: a **primary** domain that defines and
+seeds the family, plus one or more **required** domains that must also be present.
+Both are Pfam HMMs.
 
-The search is two hmmscan passes, so a common required domain (a kinase, say) is
-never scanned genome-wide:
+The search runs in two hmmscan passes:
 
 1. hmmscan the whole proteome against the **primary** HMM(s) to get candidates.
 2. hmmscan only those candidates against the primary+required HMMs, keeping the
    ones that also carry every required domain. Those are the final candidates.
 
-The final candidates then run through the ordinary annotation pipeline unchanged:
-InterProScan does the complete domain/GO annotation, then ProtParam, TargetP,
-DeepLoc, genomic coordinates, and the compiled TSV/XLSX. `family` is the
-architecture name, so every output groups by it.
+The final candidates then go through InterProScan, ProtParam, TargetP,
+DeepTMHMM, DeepLoc, coordinate mapping, and result compilation. `family` holds
+the architecture name in every output.
 
 Set `MODE: architecture` in `config.yaml`, then copy
 `config/architecture.tsv.example` to `config/architecture.tsv`. One row per
@@ -130,25 +137,30 @@ gwiscan run -C project/ --threads 8 --ebi-email you@example.com
 
 The main results go to `project/final_results/` and the working files to
 `project/intermediate/`. Send both (and `logs/`) somewhere else with `-o/--output`.
+A command cheat-sheet is in [`docs/COMMANDS.md`](docs/COMMANDS.md).
 
-You can resume, stop, or skip stages, so a long run that fails part way does not
-have to start over:
+You can resume a run, stop after a stage, skip a stage, or add an off-by-default one:
 
 ```bash
 gwiscan run --list-stages                      # show the stage names
 gwiscan run -C project/ --from-stage merge     # start from a stage
 gwiscan run -C project/ --until compile        # stop after a stage
-gwiscan run -C project/ --skip meme,weblogo    # skip stages and keep going
+gwiscan run -C project/ --skip weblogo         # skip a stage
+gwiscan run -C project/ --add iqtree           # add the off-by-default tree
 ```
 
-If an optional tool (`trim`, `weblogo`, `meme`, `iqtree`) is not installed, that
-stage is skipped instead of stopping the run. You can point to any of these tools
-with its `*_BIN` setting. All the flags above also work as `config.yaml` settings
-or env vars.
+A default run stops at the annotation table. The phylogeny workflow — ClipKIT
+trimming (`trim`) and the per-family tree (`iqtree`) — is **off by default**: it is
+slow and adds nothing to `gwiscan_results.tsv`. Turn it on with `--add iqtree` (or
+`ADD_STAGES: [iqtree]` in `config.yaml`). Because `trim` exists only to feed
+`iqtree`, adding `iqtree` pulls in `trim` automatically, so you never run one
+without the other. `gwiscan trim` and `gwiscan iqtree` still work on their own.
 
-To scan several species at once, add `config/species.tsv` (`Prefix`, `Proteome`).
-Each species runs on its own in parallel, into `final_results/<Prefix>/` and
-`intermediate/<Prefix>/`:
+`weblogo` and `meme` are optional: if the tool is not installed the stage is
+skipped instead of stopping the run. Point to any tool with its `*_BIN` setting.
+All the flags above also work as `config.yaml` settings or env vars.
+
+To scan several species, add `config/species.tsv` (`Prefix`, `Proteome`):
 
 ```
 Prefix   Proteome
@@ -156,9 +168,36 @@ Ath      genomes/Athaliana.fasta
 Gma      genomes/Gmax.fasta
 ```
 
-`SPECIES_PARALLEL` sets how many run at once (0 means auto). One species failing
-does not stop the others; re-run a subset with `--only-species Ath,Gma` or just
-the failed ones with `--retry-failed`.
+Each species has its own `final_results/<Prefix>/` and `intermediate/<Prefix>/`
+folders. Species are scheduled stage by stage: every species finishes a stage before
+any starts the next, and within a stage the species run in parallel.
+
+Some stages run one species at a time instead: `deeptmhmm`, `targetp`, and `deeploc`
+(listed in `SERIAL_STAGES`), because each needs a resource that several species
+cannot share at once, such as a single GPU, a large in-memory model, or a
+license-limited tool. The per-species thread count is rebalanced for each stage, so a stage running
+one species at a time still uses every core.
+
+Three settings control how many species run at once, from a global default to a
+per-stage override:
+
+| Setting | Type | What it controls |
+|---------|------|------------------|
+| `SPECIES_PARALLEL` | one number | the default number of species run at once, for every stage (0 = auto from cores/threads) |
+| `SERIAL_STAGES` | list of stage names | stages forced to one species at a time |
+| `STAGE_PARALLEL` | map `{stage: N}` | a per-stage number that overrides the default and `SERIAL_STAGES` |
+
+Per stage the count is `STAGE_PARALLEL[stage]` if set, else `1` if the stage is in
+`SERIAL_STAGES`, else `SPECIES_PARALLEL`. For example:
+
+```yaml
+SPECIES_PARALLEL: 4              # default: every other stage runs 4 species at once
+SERIAL_STAGES: [deeptmhmm]       # deeptmhmm runs 1 species at a time
+STAGE_PARALLEL: {interpro: 2}    # interpro runs 2 species at a time
+```
+
+One species failing does not stop the others; use `--only-species Ath,Gma` or
+`--retry-failed` to rerun a subset.
 
 After the species finish, a cross-species summary is written to the top-level
 `final_results/`:
@@ -171,29 +210,26 @@ After the species finish, a cross-species summary is written to the top-level
 
 This works in every mode (in architecture mode the rows are the architectures).
 
-There is also a Snakemake workflow that runs the same stages as a resumable,
-parallel pipeline:
-
-```bash
-snakemake -s workflow/Snakefile --cores 8
-```
-
 Each stage can also run on its own (`gwiscan <stage>`); `gwiscan <stage> --help`
 lists the options. Settings are read in this order: built-in defaults, then
-`config.yaml`, then env vars, then command-line flags.
+`config.yaml`, then env vars, then command-line flags. Any setting can be given
+as an environment variable named `GWISCAN_<KEY>` (e.g. `GWISCAN_THREADS`); the
+bare `<KEY>` name still works, but the `GWISCAN_` prefix is preferred for the few
+generic names (`THREADS`, `OUTPUT`, `MODE`, `ANNOTATION`) so they cannot pick up an
+unrelated value already in your environment.
 
 ## Outputs
 
 | File | What it is |
 |------|-------------|
-| `final_results/gwiscan_results.tsv` / `.xlsx` | The final results table (the `.xlsx` groups the columns by source tool) |
-| `final_results/gwiscan_members.gff3` | The members as genome features |
+| `final_results/gwiscan_results.tsv` / `.xlsx` | The final results table (the `.xlsx` groups the columns by source tool). When an annotation is supplied it includes the chromosomal locus and gene structure (`nIntrons`, i.e. exon count − 1) for each member. |
+| `final_results/gwiscan_members.gff3` | The members as genome features (with the intron count as an attribute) |
 | `final_results/provenance.txt` | Tool versions, settings, input checksums |
 | `intermediate/candidates_merged.tsv` / `.fasta` | The merged HMM and DIAMOND candidates |
 | `intermediate/interproscan.tsv` | Domain and GO annotations |
 | `intermediate/{protparam,targetp,deeptmhmm,deeploc}.tsv` | The per-tool annotation tables |
 | `intermediate/msa/{Family}_aligned.fasta` | Per-family MAFFT alignment |
-| `intermediate/weblogo/`, `meme/`, `trees/` | Per-family logos, motifs, and trees |
+| `intermediate/weblogo/`, `meme/`, `trees/` | Per-family logos, motifs, and trees (`trim`/`trees` only when the tree workflow is enabled with `--add iqtree`) |
 
 Each stage writes a log under `logs/` (one folder per species in multi-species runs).
 

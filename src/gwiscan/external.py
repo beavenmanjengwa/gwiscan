@@ -54,30 +54,51 @@ def require(binary: str) -> None:
         raise FileNotFoundError(f"required tool not found on PATH: {binary}")
 
 
-def run(cmd, check: bool = True, stdout_path=None, cwd=None) -> subprocess.CompletedProcess:
-    """Run an external command, echoing it and its output.
+def _stream(pipe) -> str:
+    """Echo a text pipe to our stdout line by line as it arrives, and return the
+    full captured text. Streaming (rather than reading once at the end) gives live
+    progress for the long-running tools -- hmmscan, IQ-TREE, local InterProScan --
+    instead of a silent wait until the tool exits."""
+    captured = []
+    for line in pipe:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        captured.append(line)
+    return "".join(captured)
 
-    cmd elements are str()-cast, so Paths are fine. If stdout_path is given, the
-    child's stdout is written there and only stderr is echoed; otherwise stdout and
-    stderr are merged and echoed. Raises RuntimeError on non-zero exit when check.
+
+def run(cmd, check: bool = True, stdout_path=None, cwd=None) -> subprocess.CompletedProcess:
+    """Run an external command, echoing it and its output live.
+
+    cmd elements are str()-cast, so Paths and ints are fine. If stdout_path is
+    given, the child's stdout is written there and only stderr is echoed;
+    otherwise stdout and stderr are merged and echoed. Output is streamed as it is
+    produced. The returned CompletedProcess carries the captured echoed stream
+    (its stdout in merged mode, its stderr in stdout_path mode). Raises
+    RuntimeError on non-zero exit when check.
     """
     cmd = [str(c) for c in cmd]
     cwd = str(cwd) if cwd is not None else None
     log(f"[CMD] {' '.join(cmd)}")
 
     if stdout_path is not None:
+        # Child stdout goes straight to the file; only stderr is streamed to us.
         with open(stdout_path, "w") as out:
-            result = subprocess.run(cmd, stdout=out, stderr=subprocess.PIPE,
+            proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.PIPE,
                                     text=True, cwd=cwd)
-        stream = result.stderr
+            stderr_text = _stream(proc.stderr)
+            proc.wait()
+        result = subprocess.CompletedProcess(cmd, proc.returncode,
+                                             stdout=None, stderr=stderr_text)
     else:
-        result = subprocess.run(cmd, stdout=subprocess.PIPE,
+        # Merge stderr into stdout and stream the single combined pipe.
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True, cwd=cwd)
-        stream = result.stdout
+        stdout_text = _stream(proc.stdout)
+        proc.wait()
+        result = subprocess.CompletedProcess(cmd, proc.returncode,
+                                             stdout=stdout_text, stderr=None)
 
-    if stream:
-        sys.stdout.write(stream)
-        sys.stdout.flush()
     if check and result.returncode != 0:
         raise RuntimeError(f"command failed (exit {result.returncode}): {' '.join(cmd)}")
     return result

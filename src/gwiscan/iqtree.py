@@ -17,15 +17,15 @@ from __future__ import annotations
 
 from Bio import SeqIO
 
-from . import external, trimal
+from . import clipkit, external
 from .config import Config
 
 
 def _tree_input(aligned):
-    """The alignment IQ-TREE should build from: the trimAl-trimmed file if the
-    `trim` stage produced one, otherwise the raw MAFFT alignment (trimAl is
+    """The alignment IQ-TREE should build from: the ClipKIT-trimmed file if the
+    `trim` stage produced one, otherwise the raw MAFFT alignment (ClipKIT is
     optional / may have been skipped, so fall back gracefully)."""
-    trimmed = trimal.trimmed_path(aligned)
+    trimmed = clipkit.trimmed_path(aligned)
     return trimmed if trimmed.exists() else aligned
 
 
@@ -66,7 +66,7 @@ def run(cfg: Config) -> None:
     external.log("[iqtree] Building per-family trees...")
     for aln in alignments:
         family = aln.name[: -len("_aligned.fasta")]
-        tree_in = _tree_input(aln)          # trimmed alignment if trimAl ran, else raw
+        tree_in = _tree_input(aln)          # trimmed alignment if ClipKIT ran, else raw
         n_seqs = sum(1 for _ in SeqIO.parse(str(tree_in), "fasta"))
         if n_seqs < min_seqs:
             external.log(f"[SKIP] {family}: {n_seqs} sequence(s), need >={min_seqs} for a tree")

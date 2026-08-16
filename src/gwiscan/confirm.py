@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-####################################################################################################
-#                                                                                                  #
-# confirm.py - The InterProScan-confirmed FINAL candidate set (the `confirm` gate).                #
-#                                                                                                  #
-# Search gives initial candidates; InterProScan is the gate that turns them into final ones. A      #
+######################################################################################################
+#                                                                                                    #
+# confirm.py - The InterProScan-confirmed FINAL candidate set (the `confirm` gate).                  #
+#                                                                                                    #
+# Search gives initial candidates; InterProScan is the gate that turns them into final ones. A       #
 # merged (protein, family) row is kept when the family's Pfam is reported on that protein, or when   #
-# the family has no Pfam (EUL / custom-HMM), which is kept as already confirmed. Outputs the        #
-# confirmed table + sequences that the per-candidate annotators read.                              #
-#                                                                                                  #
-####################################################################################################
+# the family has no Pfam (EUL / custom-HMM), which is kept as already confirmed. Outputs the         #
+# confirmed table + sequences that the per-candidate annotators read.                                #
+#                                                                                                    #
+######################################################################################################
 """
 
 from __future__ import annotations
@@ -28,7 +28,16 @@ def _bare(acc) -> str:
 
 
 def confirmed_rows(merged_df, interpro_df, family_to_pfam):
-    """Keep (protein, family) rows confirmed by InterProScan; families with no Pfam kept."""
+    """Keep (protein, family) rows confirmed by InterProScan; families with no Pfam kept.
+
+    This gate treats a Pfam absent from ``interpro_df`` as a genuine non-match and
+    drops that row. That is only sound because the interpro stage annotates every
+    Pfam-family candidate completely: the API path fails the run if any chunk does
+    not finish (so partial results never reach here), and the local path runs the
+    whole candidate set in one call. An absent Pfam therefore means "InterProScan
+    saw this protein and did not call the family domain", never "the annotation is
+    missing".
+    """
     pfams_by_protein = defaultdict(set)
     for _, r in interpro_df.iterrows():
         pfams_by_protein[str(r["protein_id"])].add(_bare(r["sig_acc"]))

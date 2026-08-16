@@ -1,4 +1,11 @@
-"""Tests for the figures stage (ProtParam boxplots + stats via the bundled R script)."""
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_figures.py - figures-stage tests (ProtParam boxplots + stats via the bundled R script).     #
+#                                                                                                  #
+####################################################################################################
+"""
 
 from pathlib import Path
 

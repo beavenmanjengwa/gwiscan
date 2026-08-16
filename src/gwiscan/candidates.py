@@ -69,11 +69,15 @@ def run(cfg: Config) -> None:
     # dedup (merged is already deterministically sorted) so candidates.fasta has a
     # stable, reproducible row order run-to-run.
     candidate_ids = list(dict.fromkeys(merged["protein_id"].astype(str)))
-    proteome = SeqIO.to_dict(SeqIO.parse(str(cfg.proteome), "fasta"))
-    found = [pid for pid in candidate_ids if pid in proteome]
-    missing = [pid for pid in candidate_ids if pid not in proteome]
-
-    SeqIO.write([proteome[pid] for pid in found], str(candidates_fasta), "fasta")
+    # Index rather than load the whole proteome into memory -- a large genome has
+    # 100k+ records; SeqIO.index keeps only file offsets and fetches on demand.
+    proteome = SeqIO.index(str(cfg.proteome), "fasta")
+    try:
+        found = [pid for pid in candidate_ids if pid in proteome]
+        missing = [pid for pid in candidate_ids if pid not in proteome]
+        SeqIO.write((proteome[pid] for pid in found), str(candidates_fasta), "fasta")
+    finally:
+        proteome.close()
     external.log(f"[OK] Extracted {len(found)} candidate sequences -> candidates.fasta")
 
     if missing:

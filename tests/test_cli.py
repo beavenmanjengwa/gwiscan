@@ -1,4 +1,11 @@
-"""Tests for the run-only resume/stop/skip CLI flags and --list-stages."""
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_cli.py - Run-only resume/stop/skip CLI flag tests, plus --list-stages.                      #
+#                                                                                                  #
+####################################################################################################
+"""
 
 from gwiscan import cli, pipeline
 
@@ -48,16 +55,16 @@ def test_list_stages_does_not_require_a_project_dir(tmp_path, capsys, monkeypatc
     assert rc == 0
 
 
-def test_trim_subcommand_and_trimal_flags(tmp_path):
+def test_trim_subcommand_and_clipkit_flags(tmp_path):
     parser = cli.build_parser()
-    args = parser.parse_args(["trim", "--trimal-bin", "/opt/trimal",
-                              "--trimal-method", "gappyout"])
+    args = parser.parse_args(["trim", "--clipkit-bin", "/opt/clipkit",
+                              "--clipkit-mode", "kpic-smart-gap"])
     assert args.command == "trim"
-    assert args.TRIMAL_BIN == "/opt/trimal"
-    assert args.TRIMAL_METHOD == "gappyout"
+    assert args.CLIPKIT_BIN == "/opt/clipkit"
+    assert args.CLIPKIT_MODE == "kpic-smart-gap"
     cfg = cli._config_from_args(args)
-    assert cfg.TRIMAL_BIN == "/opt/trimal"
-    assert cfg.TRIMAL_METHOD == "gappyout"
+    assert cfg.CLIPKIT_BIN == "/opt/clipkit"
+    assert cfg.CLIPKIT_MODE == "kpic-smart-gap"
 
 
 def test_trim_stage_in_list_between_msa_and_iqtree():

@@ -1,4 +1,11 @@
-"""Tests for the InterProScan confirmation gate."""
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_confirm.py - InterProScan confirmation-gate tests.                                          #
+#                                                                                                  #
+####################################################################################################
+"""
 
 import pandas as pd
 

@@ -1,7 +1,13 @@
-"""Tests for genomic coordinates of family members (coords stage).
-
-Both annotation flavours are covered, because the same pipeline must accept the
-GTF and the GFF3 a genome portal hands out for the same representative gene set.
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_coords.py - Genomic-coordinate tests for family members (coords stage).                     #
+#                                                                                                  #
+# Both annotation flavours are covered, because the same pipeline must accept the GTF and the GFF3 #
+# a genome portal hands out for the same representative gene set.                                  #
+#                                                                                                  #
+####################################################################################################
 """
 
 from gwiscan.coords import (
@@ -138,3 +144,68 @@ def test_dot_p_suffix_resolves_against_name(tmp_path):
     located, unresolved = _coords.locate(["Phvul.001G000400.3.p"], spans)
     assert "Phvul.001G000400.3.p" in located
     assert located["Phvul.001G000400.3.p"][1:4] == ("Chr01", 1705, 6715)
+
+
+# --- gene structure: exon / intron counts -----------------------------------
+
+def test_count_exons_counts_gtf_exon_lines(tmp_path):
+    path = tmp_path / "rep.gtf"
+    path.write_text(GTF, encoding="utf-8")
+    counts = _coords.count_exons(path)
+    assert counts["Medtr1g001.1"] == 2       # two exon lines
+    assert "Medtr3g077.1" not in counts       # gene line only, no exon/CDS
+
+
+def test_count_exons_falls_back_to_cds(tmp_path):
+    # The GFF3 fixture has one CDS and no exon line, so the CDS count is used.
+    path = tmp_path / "rep.gff3"
+    path.write_text(GFF3, encoding="utf-8")
+    assert _coords.count_exons(path)["AT1G01010.1"] == 1
+
+
+def test_count_exons_propagates_to_name_alias(tmp_path):
+    # Phytozome: exon children name the mRNA by its ID, but the proteome uses Name=.
+    gff = tmp_path / "phyto.gff3"
+    gff.write_text(
+        "sc9\tphytozome\tmRNA\t1869\t4028\t.\t-\t.\t"
+        "ID=Cucsa.000200.1.v1.122;Name=Cucsa.000200.1;Parent=Cucsa.000200.v1\n"
+        "sc9\tphytozome\texon\t1869\t2500\t.\t-\t.\tParent=Cucsa.000200.1.v1.122\n"
+        "sc9\tphytozome\texon\t3000\t4028\t.\t-\t.\tParent=Cucsa.000200.1.v1.122\n")
+    counts = _coords.count_exons(gff)
+    assert counts["Cucsa.000200.1.v1.122"] == 2
+    assert counts["Cucsa.000200.1"] == 2      # resolvable by the proteome's Name id
+
+
+def test_exons_for_matches_locate_resolution():
+    counts = {"AT1G01010.1": 3, "GENE9": 5}
+    assert _coords.exons_for("AT1G01010.1", "AT1G01010", counts) == 3      # exact id
+    assert _coords.exons_for("AT1G01010.1.p", "AT1G01010", counts) == 3    # suffix stripped
+    assert _coords.exons_for("X.1", "GENE9", counts) == 5                  # gene-id fallback
+    assert _coords.exons_for("nope", "nope", counts) is None
+
+
+def test_run_writes_exon_and_intron_counts(tmp_path):
+    from gwiscan import io as gio
+    from gwiscan.config import Config
+    cfg = Config(root=tmp_path)
+    (tmp_path / "input").mkdir()
+    (tmp_path / "input" / "annotation.gtf").write_text(GTF, encoding="utf-8")
+    gio.write_tsv(
+        cfg.result("final_candidates.tsv"),
+        ["protein_id", "family", "accession", "evalue", "bitscore", "start", "end", "method"],
+        [["Medtr1g001.1", "GNA", "-", "1e-9", "100", "1", "50", "hmm"]],
+    )
+    _coords.run(cfg)
+    cmap = gio.read_tsv(cfg.result("chromosome_map.tsv"))
+    row = cmap[cmap["protein_id"] == "Medtr1g001.1"].iloc[0]
+    assert int(row["intron_count"]) == 1     # 2 exons -> 1 intron
+    assert "n_exons" not in cmap.columns     # intron count only (exon = intron + 1)
+    # the members GFF3 carries the intron count as an attribute
+    assert "introns=1" in (cfg.final_dir / "gwiscan_members.gff3").read_text()
+
+
+def test_write_gff3_adds_intron_attribute_when_present(tmp_path):
+    out = tmp_path / "members.gff3"
+    write_gff3(out, [["Medtr1g001.1", "Medtr1g001", "GNA", "Chr1", 1000, 5000, "+", 1]])
+    line = out.read_text(encoding="utf-8").splitlines()[1]
+    assert line.split("\t")[8] == "ID=Medtr1g001;protein=Medtr1g001.1;family=GNA;introns=1"

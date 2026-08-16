@@ -2,6 +2,8 @@ THREADS: 4
 OUTPUT: ""                     # where results/ and logs/ go; empty = the project dir (-C). CLI: -o/--output
 MODE: family                   # "family" (flat), "superfamily" (adds a Superfamily rollup; family map needs a Superfamily column), or "architecture" (domain-combination: primary + required Pfam domains via two-pass hmmscan; rules in config/architecture.tsv)
 SPECIES_PARALLEL: 0            # multi-species: concurrent species. 0 = auto (cores // THREADS); N = exactly N at once
+SERIAL_STAGES: [deeptmhmm, targetp, deeploc]  # resource-bound stages run one species at a time
+STAGE_PARALLEL: {}             # optional per-stage override, e.g. {deeptmhmm: 2}
 DIAMOND_EVALUE: "1e-5"
 DIAMOND_IDENTITY: 30           # round 2 min % identity (native seeds); round 1 is --very-sensitive, E-value only
 DIAMOND_COVERAGE_R2: 70        # round 2 query coverage % (native seeds)
@@ -10,7 +12,7 @@ DIAMOND_BSR: 0.4               # round-2 seeds for no-HMM families: Blast Score 
 CONCORDANCE_MIN: 0.7           # score stage: Jaccard at/above which a family is "concordant" (hmmscan vs independent DIAMOND round 1)
 PRIMARY_TRANSCRIPT: true       # input proteome is one protein per gene; false only if it still has isoforms
 EBI_EMAIL: ""                  # REQUIRED — InterProScan always runs; set here or export EBI_EMAIL
-INTERPRO_APPL: "Pfam,CDD,PROSITE-profiles"  # InterProScan member db(s); Pfam drives architecture, CDD+PROSITE enrich
+INTERPRO_APPL: "Pfam,CDD,ProSiteProfiles"  # InterProScan member db(s); Pfam drives architecture, CDD+PROSITE enrich
 INTERPRO_MODE: "api"           # "api" (EBI REST, needs EBI_EMAIL) or "local" (installed interproscan.sh)
 INTERPROSCAN_BIN: "interproscan.sh"  # local mode: install InterProScan system-wide (on PATH) so this name resolves; full path only for a non-PATH install
 INTERPRO_LOOKUP: false         # local mode: use the online precalc lookup; false = fully offline (-dp)

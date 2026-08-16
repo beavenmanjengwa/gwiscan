@@ -1,4 +1,11 @@
-"""Tests for systematic domain-id assignment."""
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_domains.py - Systematic domain-id assignment tests.                                         #
+#                                                                                                  #
+####################################################################################################
+"""
 
 import pandas as pd
 

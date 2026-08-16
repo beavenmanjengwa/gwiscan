@@ -13,11 +13,51 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 from . import external, io
 from .config import Config
 from .schema import HIT_HEADER
+
+# A GA (gathering) threshold line in an HMMER profile header, e.g. "GA  27.0 27.0;".
+_GA_RE = re.compile(r"^GA\s")
+
+# Guidance shown when a custom identifying HMM lacks GA thresholds. Kept in one
+# place so preflight and setup-db give the user the same, correct instructions.
+GA_THRESHOLD_HELP = (
+    "The HMM search runs `hmmscan --cut_ga`, which applies each model's own GA "
+    "(gathering) cutoff, so every identifying model must declare one. A profile from "
+    "hmmbuild has no GA line unless its source alignment carried one. Add a GA cutoff "
+    "to the profile (build it from a Stockholm alignment with a `#=GF GA <seq> <dom>` "
+    "line, or insert a `GA  <seq> <dom>;` line into the .hmm header), or identify this "
+    "family by a Pfam accession instead."
+)
+
+
+def has_ga_thresholds(hmm_path) -> bool:
+    """True when every model in an HMMER profile file declares a GA threshold.
+
+    An .hmm file may hold several concatenated models; ``hmmscan --cut_ga`` aborts
+    the whole search if any one of them lacks a GA cutoff, so this requires one GA
+    line per model (and at least one model)."""
+    n_models = n_ga = 0
+    with open(hmm_path, encoding="utf-8", errors="ignore") as fh:
+        for line in fh:
+            if line.startswith("HMMER3"):      # each model begins with the format line
+                n_models += 1
+            elif _GA_RE.match(line):
+                n_ga += 1
+    return n_models >= 1 and n_ga == n_models
+
+
+def custom_hmm_ga_error(hmm_path, family: str) -> str | None:
+    """An explanatory error string if a custom identifying HMM lacks GA thresholds,
+    else None. Shared by preflight (logs it) and setup-db (raises it)."""
+    if has_ga_thresholds(hmm_path):
+        return None
+    return f"custom HMM for '{family}' has no GA (gathering) thresholds: {hmm_path}. {GA_THRESHOLD_HELP}"
+
 
 # hmmscan --domtblout fixed columns (0-based); see HMMER Userguide.
 _COL = {

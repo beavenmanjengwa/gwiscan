@@ -1,8 +1,14 @@
-"""Tests for the lectin domain BED builder.
-
-Covers the family-driven logic: one row per domain match, tandem domains as
-separate rows, CRA PF00704 pulled ONLY for DIAMOND-identified CRA proteins (not
-every PF00704 hit), incidental non-lectin domains excluded, and EUL skipped.
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_domain_bed.py - Lectin domain BED builder tests.                                            #
+#                                                                                                  #
+# Covers the family-driven logic: one row per domain match, tandem domains as separate rows, CRA   #
+# PF00704 pulled only for DIAMOND-identified CRA proteins (not every PF00704 hit), incidental non- #
+# lectin domains excluded, and EUL skipped.                                                        #
+#                                                                                                  #
+####################################################################################################
 """
 
 import pandas as pd

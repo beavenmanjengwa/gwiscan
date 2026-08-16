@@ -218,15 +218,10 @@ def preflight(cfg: Config) -> None:
             external.log(f"[MISSING] {binary} not found on PATH")
             fail = True
 
-    if not cfg.proteome.exists():
-        external.log(f"[MISSING] input proteome not found: {cfg.proteome}")
-        fail = True
-    else:
-        with open(cfg.proteome, encoding="utf-8") as fh:
-            n = sum(1 for line in fh if line.startswith(">"))
-        external.log(f"[OK] input proteome: {n} sequences" if n
-                     else f"[ERROR] {cfg.proteome} contains no FASTA records")
-        fail = fail or n == 0
+    # Proteome(s): multi-species runs validate every manifest species; single-species
+    # validates input/proteome.fasta. Shared with the family/superfamily pre-flight.
+    from . import preflight
+    fail = preflight._check_proteomes(cfg) or fail
 
     if not cfg.architecture_map.exists():
         external.log(f"[MISSING] architecture table not found: {cfg.architecture_map}")
@@ -278,33 +273,37 @@ def run(cfg: Config) -> None:
         raise FileNotFoundError("HMM databases not pressed (run `setup-db` first)")
 
     rules = read_rules(cfg.architecture_map)
-    proteome = SeqIO.to_dict(SeqIO.parse(str(cfg.proteome), "fasta"))
+    # Index the proteome (file offsets only) rather than loading every record into
+    # memory -- a plant genome can carry 100k+ proteins.
+    proteome = SeqIO.index(str(cfg.proteome), "fasta")
+    try:
+        # Pass 1: seed on the primary domain across the whole proteome.
+        primary_hits = _parse_domtbl(_hmmscan(cfg, cfg.primary_hmm_db, cfg.proteome, "primary"))
+        candidate_ids = list(dict.fromkeys(h["protein"] for h in primary_hits))
+        external.log(f"[OK] Pass 1 (primary seed): {len(candidate_ids)} candidate proteins")
 
-    # Pass 1: seed on the primary domain across the whole proteome.
-    primary_hits = _parse_domtbl(_hmmscan(cfg, cfg.primary_hmm_db, cfg.proteome, "primary"))
-    candidate_ids = list(dict.fromkeys(h["protein"] for h in primary_hits))
-    external.log(f"[OK] Pass 1 (primary seed): {len(candidate_ids)} candidate proteins")
+        cand_seed_fasta = cfg.result("candidates_primary.fasta")
+        SeqIO.write((proteome[i] for i in candidate_ids if i in proteome),
+                    str(cand_seed_fasta), "fasta")
 
-    cand_seed_fasta = cfg.result("candidates_primary.fasta")
-    SeqIO.write([proteome[i] for i in candidate_ids if i in proteome],
-                str(cand_seed_fasta), "fasta")
+        # Pass 2: search candidates against primary+required, then keep full combinations.
+        if candidate_ids:
+            candidate_hits = _parse_domtbl(_hmmscan(cfg, cfg.hmm_db, cand_seed_fasta, "required"))
+        else:
+            candidate_hits = []
+        rows = classify(candidate_hits, rules)
 
-    # Pass 2: search candidates against primary+required, then keep full combinations.
-    if candidate_ids:
-        candidate_hits = _parse_domtbl(_hmmscan(cfg, cfg.hmm_db, cand_seed_fasta, "required"))
-    else:
-        candidate_hits = []
-    rows = classify(candidate_hits, rules)
+        io.write_tsv(cfg.result("candidates_merged.tsv"), HIT_HEADER, rows)
+        io.write_tsv(cfg.result("final_candidates.tsv"), HIT_HEADER, rows)
 
-    io.write_tsv(cfg.result("candidates_merged.tsv"), HIT_HEADER, rows)
-    io.write_tsv(cfg.result("final_candidates.tsv"), HIT_HEADER, rows)
-
-    member_ids = list(dict.fromkeys(r[0] for r in rows))
-    members = [proteome[i] for i in member_ids if i in proteome]
-    # candidates.fasta == final members: InterProScan and domain extraction both
-    # operate on the final candidates only.
-    SeqIO.write(members, str(cfg.result("candidates.fasta")), "fasta")
-    SeqIO.write(members, str(cfg.result("final_candidates.fasta")), "fasta")
+        member_ids = list(dict.fromkeys(r[0] for r in rows))
+        members = [proteome[i] for i in member_ids if i in proteome]
+        # candidates.fasta == final members: InterProScan and domain extraction both
+        # operate on the final candidates only.
+        SeqIO.write(members, str(cfg.result("candidates.fasta")), "fasta")
+        SeqIO.write(members, str(cfg.result("final_candidates.fasta")), "fasta")
+    finally:
+        proteome.close()
 
     per_arch = defaultdict(set)
     for r in rows:

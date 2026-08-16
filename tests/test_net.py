@@ -1,9 +1,15 @@
-"""Tests for net.fetch -- the resilient single-file HTTP GET.
-
-Locks the two behaviours the download call sites depend on: a User-Agent is
-always sent (purl.obolibrary.org 403s requests without one), and transient
-failures (connection errors, 429/5xx) are retried with backoff while a genuine
-non-transient error (403/404) raises immediately.
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_net.py - Tests for net.fetch, the resilient single-file HTTP GET.                           #
+#                                                                                                  #
+# Locks the two behaviours the download call sites depend on: a User-Agent is always sent          #
+# (purl.obolibrary.org 403s requests without one), and transient failures (connection errors,      #
+# 429/5xx) are retried with backoff while a genuine non-transient error (403/404) raises           #
+# immediately.                                                                                     #
+#                                                                                                  #
+####################################################################################################
 """
 
 import urllib.error

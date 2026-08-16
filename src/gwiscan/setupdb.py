@@ -16,7 +16,7 @@ from __future__ import annotations
 import gzip
 from datetime import datetime
 
-from . import external, io, net
+from . import external, hmm, io, net
 from .config import Config
 
 # One HMM per Pfam accession (gzipped) from the InterPro API, not the full
@@ -109,6 +109,12 @@ def setup_shared(cfg: Config) -> None:
                     f"custom HMM for family '{r['family']}' not found: {dest} "
                     f"(build it and place it in db/hmm/)"
                 )
+            # Pressing a custom HMM without GA thresholds makes the later
+            # `hmmscan --cut_ga` abort the whole search, so refuse it now with the
+            # same guidance preflight gives.
+            ga_error = hmm.custom_hmm_ga_error(dest, r["family"])
+            if ga_error:
+                raise ValueError(ga_error)
             external.log(f"[OK] custom HMM present: {dest.name}")
         else:
             dest = _ensure_hmm(cfg, r["pfam_model"])

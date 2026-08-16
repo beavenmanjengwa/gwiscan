@@ -1,7 +1,13 @@
-"""Tests for InterProScan TSV header assignment.
-
-The GO and pathways columns are optional (present only when --goterms /
---pathways are on), so the header must be named by the actual column count.
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_interpro.py - InterProScan TSV header-assignment tests.                                     #
+#                                                                                                  #
+# The GO and pathways columns are optional (present only when --goterms / --pathways are on), so   #
+# the header must be named by the actual column count.                                             #
+#                                                                                                  #
+####################################################################################################
 """
 
 from gwiscan.features.interpro import (
@@ -216,3 +222,74 @@ def test_submit_and_getters_go_through_the_retrying_session(monkeypatch):
     interpro._fetch_result("JOBID", "tsv")
     assert calls["post"] == 1
     assert calls["get"] == 2
+
+
+# --- data integrity: an unfinished/incomplete chunk must not silently drop members ---
+
+
+def _api_cfg(tmp_path):
+    from gwiscan.config import Config
+    return Config(root=tmp_path, EBI_EMAIL="e@x.z")
+
+
+def _write_cand_fasta(tmp_path, n):
+    fasta = tmp_path / "cand.fasta"
+    fasta.write_text("".join(f">P{i}\nACDEFGHIK\n" for i in range(n)))
+    return fasta
+
+
+def test_run_api_raises_when_a_chunk_does_not_finish(tmp_path, monkeypatch):
+    # A chunk that times out / fails leaves its sequences unannotated; confirm would
+    # then drop those members silently. The stage must stop instead.
+    monkeypatch.setattr(interpro, "_submit", lambda *a, **k: "JOB1")
+    monkeypatch.setattr(interpro, "_poll", lambda job_id: "TIMEOUT")
+    monkeypatch.setattr(interpro, "_result_types", lambda job_id: ["tsv", "gff"])
+    monkeypatch.setattr(interpro, "_fetch_result", lambda job_id, rt: "")
+
+    import pytest
+    with pytest.raises(RuntimeError, match="did not finish"):
+        interpro._run_api(_api_cfg(tmp_path), _write_cand_fasta(tmp_path, 3))
+
+
+def test_run_api_raises_when_finished_job_has_no_tsv(tmp_path, monkeypatch):
+    # FINISHED but no TSV result type is the same silent-drop, so it is also fatal.
+    monkeypatch.setattr(interpro, "_submit", lambda *a, **k: "JOB1")
+    monkeypatch.setattr(interpro, "_poll", lambda job_id: "FINISHED")
+    monkeypatch.setattr(interpro, "_result_types", lambda job_id: ["gff"])   # no tsv
+    monkeypatch.setattr(interpro, "_fetch_result", lambda job_id, rt: "")
+
+    import pytest
+    with pytest.raises(RuntimeError, match="no 'tsv' result type"):
+        interpro._run_api(_api_cfg(tmp_path), _write_cand_fasta(tmp_path, 2))
+
+
+def test_run_api_succeeds_when_all_chunks_finish(tmp_path, monkeypatch):
+    # The happy path still returns the annotations; a missing GFF is only a warning.
+    monkeypatch.setattr(interpro, "_submit", lambda *a, **k: "JOB1")
+    monkeypatch.setattr(interpro, "_poll", lambda job_id: "FINISHED")
+    monkeypatch.setattr(interpro, "_result_types", lambda job_id: ["tsv"])   # no gff
+    row = "P0\tmd5\t9\tPfam\tPF00139\td\t1\t9\t1e-9\tT\tdate\tIPR\td"
+    monkeypatch.setattr(interpro, "_fetch_result", lambda job_id, rt: row)
+
+    lines, gff_texts = interpro._run_api(_api_cfg(tmp_path), _write_cand_fasta(tmp_path, 1))
+    assert lines == [row]
+    assert gff_texts == []
+
+
+def test_run_api_keeps_one_job_in_flight_at_a_time(tmp_path, monkeypatch):
+    # EBI Job Dispatcher fair-use: only one job open per species at a time, so each
+    # submit is immediately followed by its own poll (submit, poll, submit, poll,
+    # ...) -- never all chunks submitted up front. This is what keeps several
+    # species running in parallel within EBI's concurrent-job limit.
+    order = []
+    ids = iter([f"JOB{i}" for i in range(10)])
+    monkeypatch.setattr(interpro.time, "sleep", lambda s: None)   # no real spacing
+    monkeypatch.setattr(interpro, "_submit", lambda *a, **k: (order.append("submit"), next(ids))[1])
+    monkeypatch.setattr(interpro, "_poll", lambda job_id: (order.append("poll"), "FINISHED")[1])
+    monkeypatch.setattr(interpro, "_result_types", lambda job_id: ["tsv", "gff"])
+    monkeypatch.setattr(interpro, "_fetch_result",
+                        lambda job_id, rt: "P\tmd5\t9\tPfam\tPF1\td\t1\t9\t1e-9\tT\td\tIPR\td")
+
+    # 65 sequences -> 3 chunks (30, 30, 5).
+    interpro._run_api(_api_cfg(tmp_path), _write_cand_fasta(tmp_path, 65))
+    assert order == ["submit", "poll", "submit", "poll", "submit", "poll"]

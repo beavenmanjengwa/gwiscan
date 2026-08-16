@@ -29,6 +29,7 @@ from .config import Config
 COLUMN_BANDS = [
     ("Identity", ["protein_id", "family", "superfamily"]),
     ("Chromosomal Localization", ["gene_id", "chrom", "gene_start", "gene_end", "strand"]),
+    ("Gene structure", ["intron_count"]),
     ("Domain architecture", ["domain_architecture", "family_domain_count", "architecture_type"]),
     ("Evidence", ["evidence_level", "evidence_support", "evidence_criteria"]),
     ("Computed Physicochemical Properties",
@@ -233,12 +234,12 @@ def run(cfg: Config) -> None:
         df = df.merge(loc, on="protein_id", how="left")
         # A member the annotation does not resolve leaves an empty coordinate, so
         # the columns are nullable integers rather than floats.
-        for column in ("gene_start", "gene_end"):
+        for column in ("gene_start", "gene_end", "intron_count"):
             if column in df.columns:
                 df[column] = pd.to_numeric(df[column], errors="coerce").astype("Int64")
         at = df.columns.get_loc("family") + 1
         for offset, column in enumerate(("gene_id", "chrom", "gene_start",
-                                        "gene_end", "strand")):
+                                        "gene_end", "strand", "intron_count")):
             if column in df.columns:
                 df.insert(at + offset, column, df.pop(column))
 

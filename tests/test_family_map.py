@@ -1,9 +1,15 @@
-"""Tests for the family_map schema loader (io.family_records).
-
-Locks the one correctness-critical rule: a family may carry a Pfam accession for
-confirmation/coordinates while NOT being pressed as an identifying HMM. CRA's
-PF00704 also matches active chitinases, so pressing it would mis-identify every
-GH18 protein as CRA — HmmPress=no prevents that.
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_family_map.py - family_map schema-loader tests (io.family_records).                         #
+#                                                                                                  #
+# Locks the one correctness-critical rule: a family may carry a Pfam accession for                 #
+# confirmation/coordinates while not being pressed as an identifying HMM. CRA's PF00704 also       #
+# matches active chitinases, so pressing it would mis-identify every GH18 protein as CRA;          #
+# HmmPress=no prevents that.                                                                       #
+#                                                                                                  #
+####################################################################################################
 """
 
 from pathlib import Path

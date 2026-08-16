@@ -1,6 +1,13 @@
-"""Tests for compile: Pfam domain-architecture string + standalone/multidomain flag.
-
-Architecture uses Pfam only (one coordinate system), ordered N->C by start.
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_compile.py - compile-stage tests: Pfam domain-architecture string + standalone/multidomain  #
+# flag.                                                                                            #
+#                                                                                                  #
+# Architecture uses Pfam only (one coordinate system), ordered N->C by start.                      #
+#                                                                                                  #
+####################################################################################################
 """
 
 import pandas as pd

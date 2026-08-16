@@ -1,9 +1,14 @@
-"""Tests for preflight's family-reference-file validation.
-
-The gap this locks: preflight used to check only that config/family.tsv EXISTS,
-not that the db/blast/*.fasta and db/hmm/*.hmm files it names are present -- so a
-typo or missing model FASTA sailed through preflight and only blew up hours later
-inside setup-db. These tests exercise _check_family_reference_files directly.
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_preflight.py - preflight family-reference-file validation tests.                            #
+#                                                                                                  #
+# preflight checks not only that config/family.tsv exists but that the db/blast/*.fasta and        #
+# db/hmm/*.hmm files it names are present, so a typo or a missing model FASTA is caught up front   #
+# rather than inside setup-db. These tests exercise _check_family_reference_files directly.        #
+#                                                                                                  #
+####################################################################################################
 """
 
 import pytest
@@ -64,6 +69,83 @@ def test_missing_custom_hmm_is_detected(tmp_path, capsys):
     assert preflight._check_family_reference_files(cfg) is True
     out = capsys.readouterr().out
     assert "custom HMM for 'CRA' not found" in out
+
+
+def test_check_proteomes_multispecies_all_present(tmp_path):
+    # Multi-species: proteomes come from species.tsv, NOT input/proteome.fasta.
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "species.tsv").write_text(
+        "Prefix\tProteome\nAth\tinput/a.fa\nGma\tinput/b.fa\n")
+    (tmp_path / "input").mkdir()
+    (tmp_path / "input" / "a.fa").write_text(">p1\nACDE\n")
+    (tmp_path / "input" / "b.fa").write_text(">p2\nFGHI\n")
+    cfg = Config(root=tmp_path)
+    assert preflight._check_proteomes(cfg) is False   # no single input/proteome.fasta needed
+
+
+def test_check_proteomes_multispecies_reports_missing(tmp_path, capsys):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "species.tsv").write_text(
+        "Prefix\tProteome\nAth\tinput/a.fa\nGma\tinput/missing.fa\n")
+    (tmp_path / "input").mkdir()
+    (tmp_path / "input" / "a.fa").write_text(">p1\nACDE\n")
+    cfg = Config(root=tmp_path)
+    assert preflight._check_proteomes(cfg) is True
+    out = capsys.readouterr().out
+    assert "Gma" in out and "missing.fa" in out
+
+
+def test_check_proteomes_single_species(tmp_path):
+    (tmp_path / "input").mkdir()
+    (tmp_path / "input" / "proteome.fasta").write_text(">p1\nACDE\n>p2\nFGHI\n")
+    cfg = Config(root=tmp_path)   # no config/species.tsv -> single-species path
+    assert preflight._check_proteomes(cfg) is False
+
+
+def test_duplicate_fasta_ids_found(tmp_path):
+    # Duplicate ids would crash the proteome index (SeqIO.to_dict) mid-run.
+    p = tmp_path / "proteome.fasta"
+    p.write_text(">P1 kinase\nACDE\n>P2\nFGHI\n>P1 other\nKLMN\n>P3\nPQRS\n>P2\nTVWY\n")
+    assert preflight._duplicate_fasta_ids(p) == ["P1", "P2"]
+
+
+def test_duplicate_fasta_ids_none_when_unique(tmp_path):
+    p = tmp_path / "proteome.fasta"
+    p.write_text(">P1\nACDE\n>P2 desc\nFGHI\n>P3\nKLMN\n")
+    assert preflight._duplicate_fasta_ids(p) == []
+
+
+_HMM_WITH_GA = (
+    "HMMER3/f [3.4]\nNAME  CRA\nLENG  100\nGA    25.00 25.00;\nHMM  A  C\n//\n"
+)
+_HMM_NO_GA = "HMMER3/f [3.4]\nNAME  CRA\nLENG  100\nHMM  A  C\n//\n"
+
+
+def test_custom_hmm_without_ga_thresholds_is_detected(tmp_path, capsys):
+    # An identifying custom HMM lacking GA cutoffs would make hmmscan --cut_ga
+    # abort mid-run; preflight must catch it up front.
+    cfg = _project(
+        tmp_path,
+        "Family\tPfamModel\tBlastModel\n"
+        "CRA\tCRA.hmm\tcra.fasta\n",
+    )
+    _touch(cfg, "db/blast/cra.fasta")
+    (cfg.root / "db" / "hmm" / "CRA.hmm").write_text(_HMM_NO_GA)
+    assert preflight._check_family_reference_files(cfg) is True
+    out = capsys.readouterr().out
+    assert "no GA (gathering) thresholds" in out
+    assert "CRA" in out
+
+
+def test_custom_hmm_with_ga_thresholds_passes(tmp_path):
+    cfg = _project(
+        tmp_path,
+        "Family\tPfamModel\tBlastModel\n"
+        "CRA\tCRA.hmm\tcra.fasta\n",
+    )
+    _touch(cfg, "db/blast/cra.fasta")
+    (cfg.root / "db" / "hmm" / "CRA.hmm").write_text(_HMM_WITH_GA)
+    assert preflight._check_family_reference_files(cfg) is False
 
 
 def test_pfam_accession_hmm_not_required_on_disk(tmp_path):
@@ -143,6 +225,10 @@ def test_config_values_bootstrap_zero_is_allowed(tmp_path):
 
 def test_config_values_nmotifs_zero_invalid(tmp_path):
     assert preflight._check_config_values(Config(root=tmp_path, MEME_NMOTIFS=0)) is True
+
+
+def test_config_values_deeptmhmm_mode_invalid(tmp_path):
+    assert preflight._check_config_values(Config(root=tmp_path, DEEPTMHMM_MODE="loacl")) is True
 
 
 def test_config_values_reports_multiple_problems(tmp_path, capsys):

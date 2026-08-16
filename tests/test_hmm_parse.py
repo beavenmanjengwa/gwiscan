@@ -1,8 +1,14 @@
-"""Tests for hmmscan --domtblout parsing.
-
-Pins the column orientation: in hmmscan output the *target* is the HMM model and
-the *query* is the protein. Keeping these mapped correctly is what keeps
-protein_id and family straight and the candidate set populated downstream.
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_hmm_parse.py - hmmscan --domtblout parsing tests.                                           #
+#                                                                                                  #
+# Pins the column orientation: in hmmscan output the target is the HMM model and the query is the  #
+# protein. Keeping these mapped correctly keeps protein_id and family straight and the candidate   #
+# set populated downstream.                                                                        #
+#                                                                                                  #
+####################################################################################################
 """
 
 from gwiscan import hmm, io
@@ -82,3 +88,68 @@ def test_unmapped_accession_falls_back_to_hmm_name(tmp_path):
     hmm.parse_domtbl(cfg)
     by_protein = {r["protein_id"]: r for r in _read_hits(cfg)}
     assert by_protein["orphan_prot"]["family"] == "Mystery_dom"
+
+
+# --- GA (gathering) threshold detection for custom identifying HMMs -----------
+#
+# hmmscan --cut_ga applies each model's own GA cutoff and aborts the whole search
+# if any pressed model lacks one. A profile from hmmbuild has no GA line unless its
+# source alignment carried one, so a user's custom identifying HMM must be checked
+# before it is pressed. has_ga_thresholds() is what preflight and setup-db use.
+
+_HMM_WITH_GA = (
+    "HMMER3/f [3.4 | Aug 2023]\n"
+    "NAME  CRA\n"
+    "LENG  100\n"
+    "GA    25.00 25.00;\n"
+    "HMM          A        C\n"
+    "//\n"
+)
+_HMM_NO_GA = (
+    "HMMER3/f [3.4 | Aug 2023]\n"
+    "NAME  CRA\n"
+    "LENG  100\n"
+    "HMM          A        C\n"
+    "//\n"
+)
+
+
+def test_has_ga_thresholds_true_when_present(tmp_path):
+    p = tmp_path / "cra.hmm"
+    p.write_text(_HMM_WITH_GA)
+    assert hmm.has_ga_thresholds(p) is True
+
+
+def test_has_ga_thresholds_false_when_absent(tmp_path):
+    p = tmp_path / "cra.hmm"
+    p.write_text(_HMM_NO_GA)
+    assert hmm.has_ga_thresholds(p) is False
+
+
+def test_has_ga_thresholds_requires_every_model(tmp_path):
+    # Two concatenated models, only the first declaring GA: hmmscan --cut_ga would
+    # still abort, so this must read as missing.
+    p = tmp_path / "two.hmm"
+    p.write_text(_HMM_WITH_GA + _HMM_NO_GA)
+    assert hmm.has_ga_thresholds(p) is False
+
+
+def test_has_ga_thresholds_ignores_other_ga_prefixed_lines(tmp_path):
+    # A line like "GATHER..." is not a GA threshold line ("GA" + whitespace).
+    p = tmp_path / "x.hmm"
+    p.write_text(_HMM_NO_GA.replace("NAME  CRA\n", "NAME  CRA\nGATHERING not a cutoff\n"))
+    assert hmm.has_ga_thresholds(p) is False
+
+
+def test_custom_hmm_ga_error_names_family_and_gives_guidance(tmp_path):
+    p = tmp_path / "cra.hmm"
+    p.write_text(_HMM_NO_GA)
+    msg = hmm.custom_hmm_ga_error(p, "CRA")
+    assert msg is not None
+    assert "CRA" in msg and "--cut_ga" in msg
+
+
+def test_custom_hmm_ga_error_none_when_present(tmp_path):
+    p = tmp_path / "cra.hmm"
+    p.write_text(_HMM_WITH_GA)
+    assert hmm.custom_hmm_ga_error(p, "CRA") is None

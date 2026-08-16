@@ -4,27 +4,33 @@ channels:
   - conda-forge
 dependencies:
   - python>=3.10
-  # --- Tier 1: freely-distributable tools, installed here, resolve on PATH ---
+  
+  # --- Group1: freely-distributable tools, installed here, resolve on PATH ---
   # Unpinned: conda resolves the latest mutually-compatible versions.
   - hmmer
   - diamond
   - seqkit
   - mafft
-  - trimal          # trims each MAFFT alignment before tree-building (-automated1)
+  - clipkit         # trims each MAFFT alignment before tree-building (smart-gap)
   - iqtree          # per-family ML trees (binary name: iqtree)
   - meme            # per-family motif discovery (see MEME PATH note in README)
   - weblogo
+  - r-base          # figures stage: ProtParam distribution boxplots
+  - r-ggplot2
+  - r-dplyr
+  - r-tidyr
   # --- Python deps ---
   - biopython
   - pandas
   - openpyxl
   - requests
   - pyyaml
-  - snakemake-minimal
+  - setuptools      # provides pkg_resources, which weblogo imports
   - pip
   - pip:
       - pybiolib   # DeepTMHMM runner (lightweight; the app runs on demand)
-# --- Tier 2: license-restricted tools — NOT installed here on purpose ---
+      
+# --- Group2: license-restricted tools — NOT installed here on purpose ---
 # TargetP 2.0 and DeepLoc 2.1 are academic downloads (DTU can't redistribute them)
 # and pin conflicting Python/torch versions, so installing them into THIS env can
 # break it. Install each in its OWN conda env (see README "Installation") and point

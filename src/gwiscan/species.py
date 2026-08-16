@@ -4,8 +4,8 @@
 #                                                                                                  #
 # species.py - Multi-species driver: run each proteome as an independent parallel job.             #
 #                                                                                                  #
-# Reads config/species.tsv (Prefix, Proteome), presses the shared databases once, then runs the    #
-# per-species pipeline concurrently. Each species writes into intermediate/<Prefix>/ and is fully       #
+# Reads config/species.tsv (Prefix, Proteome), presses the shared databases once, then schedules   #
+# each pipeline stage across species. Each species writes into intermediate/<Prefix>/ and is fully #
 # isolated; one species failing does not abort the others.                                         #
 #                                                                                                  #
 ####################################################################################################
@@ -84,6 +84,24 @@ def _select_species(cfg: Config, species: list) -> list:
     return subset
 
 
+def _total_mem_gb():
+    """Total physical RAM in GB, or None if it can't be read portably (e.g. on a
+    platform without these sysconf names). Used only to keep the auto concurrency
+    from oversubscribing memory."""
+    try:
+        return os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") / 1e9
+    except (ValueError, AttributeError, OSError):
+        return None
+
+
+def _mem_per_species_gb(cfg: Config, key: str) -> float | None:
+    """Peak RAM estimate for a particular heavy stage, or None if it is not
+    resource-limited by a known in-memory model."""
+    if key == "deeploc" and str(cfg.DEEPLOC_MODEL).lower() == "accurate":
+        return 32.0
+    return None
+
+
 def _concurrency(cfg: Config, n_species: int) -> int:
     """How many species to run at once.
 
@@ -91,12 +109,15 @@ def _concurrency(cfg: Config, n_species: int) -> int:
     so the outer (species) x inner (per-species THREADS) parallelism totals ~one
     thread per core -- full CPU use without oversubscription, and without launching
     every species at once (which can exhaust RAM or hammer the InterProScan API).
-    Never more than the number of species, never less than 1.
+
+    Never more than the number of species, never less than 1. Stage-specific RAM
+    caps are applied by _stage_concurrency, where the actual tool is known.
     """
     if cfg.SPECIES_PARALLEL > 0:
         return min(cfg.SPECIES_PARALLEL, n_species)
     cores = os.cpu_count() or 1
     auto = max(1, cores // max(1, cfg.THREADS))
+
     return min(auto, n_species)
 
 
@@ -225,16 +246,90 @@ def write_combined_summary(cfg: Config, prefixes: list) -> None:
     )
 
 
-def _run_one(cfg: Config) -> tuple:
-    """Worker: run one species pipeline (shared setup already done). Returns
-    (prefix, None) on success or (prefix, error_message) on failure, so one species
-    failing never aborts the others."""
+def _stage_concurrency(cfg: Config, key: str, n_alive: int) -> int:
+    """How many species run stage ``key`` at once.
+
+    Use STAGE_PARALLEL[key] if it is set; otherwise run one species at a time when
+    the stage is listed in SERIAL_STAGES; otherwise use the default width from
+    _concurrency (SPECIES_PARALLEL, or auto from cores/threads). Capped at the
+    species still alive, and at least 1."""
+    override = (cfg.STAGE_PARALLEL or {}).get(key)
+    if override is not None and int(override) > 0:
+        want = int(override)
+    elif key in set(cfg.SERIAL_STAGES or ()):
+        want = 1
+    else:
+        want = _concurrency(cfg, n_alive)
+        per_species_gb = _mem_per_species_gb(cfg, key)
+        mem_gb = _total_mem_gb()
+        if per_species_gb and mem_gb is not None:
+            want = min(want, max(1, int(mem_gb // per_species_gb)))
+    return max(1, min(want, n_alive))
+
+
+def _stage_threads(cfg: Config, cores: int, conc: int) -> int:
+    """Per-species thread budget for a stage running ``conc`` species at once.
+
+    It is exactly the machine budget divided by the number of concurrent species,
+    so concurrent tools cannot collectively exceed the available cores. A
+    serialised stage receives every core."""
+    return max(1, cores // max(1, conc))
+
+
+def _validate_stage_policy(cfg: Config, available_stages: list) -> None:
+    """Fail before work when policy names or widths are invalid for this MODE.
+
+    ``available_stages`` must be the complete mode-specific catalog, not the
+    current --from-stage/--until slice: a policy for an earlier or later stage is
+    still valid during a resumed run.
+    """
+    valid = {key for key, *_ in available_stages}
+    unknown_serial = sorted(set(cfg.SERIAL_STAGES or ()) - valid)
+    unknown_parallel = sorted(set((cfg.STAGE_PARALLEL or {})) - valid)
+    if unknown_serial or unknown_parallel:
+        details = []
+        if unknown_serial:
+            details.append(f"SERIAL_STAGES: {', '.join(unknown_serial)}")
+        if unknown_parallel:
+            details.append(f"STAGE_PARALLEL: {', '.join(unknown_parallel)}")
+        raise RuntimeError(
+            f"unknown stage policy key(s) ({'; '.join(details)}). "
+            f"Valid stages: {', '.join(key for key, *_ in available_stages)}"
+        )
+    for key, value in (cfg.STAGE_PARALLEL or {}).items():
+        try:
+            width = int(value)
+        except (TypeError, ValueError):
+            raise RuntimeError(f"STAGE_PARALLEL[{key!r}] must be a positive integer, got {value!r}")
+        if width < 1:
+            raise RuntimeError(f"STAGE_PARALLEL[{key!r}] must be a positive integer, got {value!r}")
+
+
+def _lookup_stage(cfg: Config, key: str) -> tuple:
+    """The (label, func, logname) for stage ``key`` in this run's MODE. Resolved
+    from pipeline.stages_for INSIDE the worker so the stage's lambda is rebuilt
+    locally and never has to be pickled across the process boundary."""
+    for k, label, func, logname in pipeline.stages_for(cfg):
+        if k == key:
+            return label, func, logname
+    raise KeyError(f"stage {key!r} not found for this run's mode")
+
+
+def _run_stage(cfg: Config, key: str) -> tuple:
+    """Worker: run ONE stage (named by ``key``) for one species (shared setup
+    already done). Returns (prefix, None) on success or (prefix, error_message) on
+    failure, so a species failing a stage never aborts the others -- it is dropped
+    from the remaining stages instead.
+
+    Only the picklable Config and the stage key cross the process boundary; the
+    stage function (a lambda) is looked up locally via _lookup_stage."""
     # This worker runs in its own process but shares the terminal with the other
     # species; tag every line so interleaved output stays readable. (Each species'
     # authoritative per-stage log still lives in its own logs/<prefix>/ tree.)
     external.set_line_prefix(f"[{cfg.SPECIES}] ")
     try:
-        pipeline.run(cfg, include_shared_setup=False)
+        label, func, logname = _lookup_stage(cfg, key)
+        pipeline._stage(cfg, label, func, logname)
         return (cfg.SPECIES, None)
     except Exception as e:  # noqa: BLE001 - report per-species, keep the rest running
         return (cfg.SPECIES, f"{type(e).__name__}: {e}")
@@ -243,9 +338,16 @@ def _run_one(cfg: Config) -> tuple:
 
 
 def run(cfg: Config) -> None:
-    """Run config/species.tsv as independent parallel jobs. --only-species /
-    --retry-failed narrow it to a subset; every run's per-species OK/FAILED
-    outcomes are persisted to logs/species_status.tsv (feeding --retry-failed)."""
+    """Run config/species.tsv with stage-barrier scheduling: every species clears a
+    stage before any moves on, so per-stage concurrency can differ. Most stages run
+    the species in parallel; SERIAL_STAGES / STAGE_PARALLEL pin resource-bound stages
+    (DeepTMHMM, TargetP, DeepLoc) to fewer species at once, and the per-species thread
+    budget is rebalanced so a serialised stage still uses the whole machine.
+
+    --only-species / --retry-failed narrow it to a subset; every run's per-species
+    OK/FAILED outcomes are persisted to logs/species_status.tsv (feeding
+    --retry-failed). A species that fails one stage is dropped from later stages but
+    keeps whatever it already produced (so the combined summary still includes it)."""
     manifest = read_species_manifest(cfg.species_manifest)
     external.log(f"[multi] {len(manifest)} species: {', '.join(s['prefix'] for s in manifest)}")
 
@@ -257,32 +359,77 @@ def run(cfg: Config) -> None:
     external.log("[multi] Building shared databases (HMM + model FASTAs)...")
     setupdb.setup_shared(cfg)
 
-    configs = [_species_config(cfg, s["prefix"], s["proteome"], s.get("annotation", ""))
-               for s in species]
-    n_workers = _concurrency(cfg, len(configs))
-    external.log(
-        f"[multi] Running {len(configs)} species, up to {n_workers} at once "
-        f"({cfg.THREADS} threads each; cores={os.cpu_count()}). "
-        f"Smaller proteomes finish first; each writes intermediate/<prefix>/ as it completes."
-    )
+    configs = {s["prefix"]: _species_config(cfg, s["prefix"], s["proteome"], s.get("annotation", ""))
+               for s in species}
+    # Create each species' intermediate/<prefix>/ and logs/<prefix>/ up front:
+    # pipeline._stage opens the per-stage log before the stage runs, so the tree
+    # must exist even though the stage functions also ensure their own dirs.
+    for c in configs.values():
+        c.ensure_dirs()
 
-    results = []
-    with ProcessPoolExecutor(max_workers=n_workers) as pool:
-        futures = {pool.submit(_run_one, c): c.SPECIES for c in configs}
-        for fut in as_completed(futures):
-            prefix, err = fut.result()
-            if err:
-                external.log(f"[multi] [FAIL] {prefix}: {err}")
-            else:
-                external.log(f"[multi] [DONE] {prefix} -> {cfg.root / 'results' / prefix}")
-            results.append((prefix, err))
+    # The plan (stage list + skip/auto-skip) is identical across species -- same
+    # MODE and same --from-stage/--until/--skip -- so resolve it once from any
+    # config. Shared setup was just done, so it is excluded here.
+    sample = next(iter(configs.values()))
+    selected, skip, auto_skip, off = pipeline.resolve_plan(sample, include_shared_setup=False)
+    available_stages = [s for s in pipeline.stages_for(sample) if s[0] != "setup-shared"]
+    _validate_stage_policy(cfg, available_stages)
+
+    cores = os.cpu_count() or 1
+    serial = ", ".join(cfg.SERIAL_STAGES) or "none"
+    external.log(
+        f"[multi] {len(configs)} species x {len(selected)} stage(s), stage-barrier "
+        f"scheduling (cores={cores}, default width {_concurrency(cfg, len(configs))}). "
+        f"Serialised stages: {serial}."
+    )
+    if cfg.FROM_STAGE:
+        external.log(f"[multi] [resume] starting from stage '{cfg.FROM_STAGE}'.")
+    if cfg.UNTIL_STAGE:
+        external.log(f"[multi] [resume] stopping after stage '{cfg.UNTIL_STAGE}'.")
+
+    alive = dict(configs)     # prefix -> cfg for species still running
+    failed = {}               # prefix -> first error message
+
+    for key, label, _func, _logname in selected:
+        notice = pipeline.skip_notice(key, label, skip, auto_skip, off)
+        if notice:
+            external.log("\n[multi] " + notice)
+            continue
+        if not alive:
+            break
+
+        conc = _stage_concurrency(cfg, key, len(alive))
+        threads = _stage_threads(cfg, cores, conc)
+        external.log(
+            f"\n[multi] {label} -- {len(alive)} species, {conc} at once, {threads} threads each"
+        )
+        # Rebalance the per-species thread budget for this stage so it fills the
+        # machine (a serialised stage gets every core). Each species still writes
+        # into its own intermediate/<prefix>/ tree, staying independent.
+        stage_cfgs = {p: dataclasses.replace(c, THREADS=threads) for p, c in alive.items()}
+        stage_failures = {}
+        with ProcessPoolExecutor(max_workers=conc) as pool:
+            futures = {pool.submit(_run_stage, c, key): p
+                       for p, c in stage_cfgs.items()}
+            for fut in as_completed(futures):
+                prefix, err = fut.result()
+                if err:
+                    stage_failures[prefix] = err
+        # Drop species that failed this stage; they keep their earlier outputs.
+        for prefix, err in stage_failures.items():
+            failed[prefix] = err
+            alive.pop(prefix, None)
+            external.log(f"[multi] [FAIL] {prefix} at stage '{key}': {err}")
+
+    for prefix in alive:
+        external.log(f"[multi] [DONE] {prefix} -> {cfg.output_root / 'final_results' / prefix}")
 
     # Persist outcomes, MERGING with any prior status so species not in this run
     # (e.g. when only a subset ran) keep their previous OK/FAILED state -- that is
     # what makes a later --retry-failed see the right set.
     status = _load_status(_status_path(cfg))
-    for prefix, err in results:
-        status[prefix] = "FAILED" if err else "OK"
+    for prefix in configs:
+        status[prefix] = "FAILED" if prefix in failed else "OK"
     _write_status(_status_path(cfg), status)
 
     # Cross-species summary over every manifest species whose results are on disk
@@ -294,11 +441,11 @@ def run(cfg: Config) -> None:
     except Exception as e:  # noqa: BLE001 - the summary is a convenience, never fatal
         external.log(f"[multi] [WARN] could not write combined summary: {type(e).__name__}: {e}")
 
-    failed = [p for p, e in results if e]
     external.log("=" * 56)
-    external.log(f"[multi] Complete: {len(results) - len(failed)}/{len(results)} species succeeded")
+    external.log(f"[multi] Complete: {len(alive)}/{len(configs)} species succeeded")
     external.log(f"[multi] Status written: {_status_path(cfg)}")
     if failed:
-        external.log(f"[multi] Failed: {', '.join(failed)}")
+        ordered = [p for p in configs if p in failed]
+        external.log(f"[multi] Failed: {', '.join(ordered)}")
         external.log("[multi] Re-run just these with:  gwiscan run --retry-failed")
-        raise RuntimeError(f"{len(failed)} species failed: {', '.join(failed)}")
+        raise RuntimeError(f"{len(failed)} species failed: {', '.join(ordered)}")

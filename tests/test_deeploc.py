@@ -1,9 +1,14 @@
-"""Tests for DeepLoc 2.1 results parsing.
-
-Checks that we keep only protein_id + the summary columns (dropping the
-per-compartment probability columns, which stay in the raw file), rename the ID
-column so it joins the pipeline, and collapse DeepLoc's ``Lysosome/Vacuole``
-class to ``Vacuole`` in either slash order.
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_deeploc.py - DeepLoc 2.1 results-parsing tests.                                             #
+#                                                                                                  #
+# Checks that only protein_id and the summary columns are kept (the per-compartment probability    #
+# columns stay in the raw file), the ID column is renamed so it joins the pipeline, and DeepLoc's  #
+# Lysosome/Vacuole class collapses to Vacuole in either slash order.                               #
+#                                                                                                  #
+####################################################################################################
 """
 
 from gwiscan.features.deeploc import parse_results

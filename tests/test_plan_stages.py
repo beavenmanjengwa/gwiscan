@@ -1,4 +1,11 @@
-"""Tests for `run`'s resume/stop/skip stage selection (pipeline.plan_stages)."""
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_plan_stages.py - `run` resume/stop/skip stage-selection tests (pipeline.plan_stages).       #
+#                                                                                                  #
+####################################################################################################
+"""
 
 import pytest
 

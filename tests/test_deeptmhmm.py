@@ -1,9 +1,20 @@
-"""Tests for DeepTMHMM parsing.
-
-Coordinates come from TMRs.gff3 (the structured coordinate output); the
-per-protein class label comes from the predicted_topologies.3line header.
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_deeptmhmm.py - DeepTMHMM parsing tests.                                                     #
+#                                                                                                  #
+# Coordinates come from TMRs.gff3 (the structured coordinate output); the per-protein class label  #
+# comes from the predicted_topologies.3line header.                                                #
+#                                                                                                  #
+####################################################################################################
 """
 
+import pytest
+
+from gwiscan import io
+from gwiscan.config import Config
+from gwiscan.features import deeptmhmm
 from gwiscan.features.deeptmhmm import (
     OUT_HEADER,
     build_rows,
@@ -93,7 +104,7 @@ def test_build_rows_combines_both(tmp_path):
     assert glob["n_tm_regions"] == 0
 
     # A beta-barrel gets its topology label AND its β-strand ranges (general
-    # families can be β-barrels — transporters, porins).
+    # families can be β-barrels -- transporters, porins).
     barrel = rows["Barrel.1"]
     assert barrel["topology"] == "BETA"
     assert barrel["tm_regions"] == "-"
@@ -108,3 +119,32 @@ def test_build_rows_without_3line(tmp_path):
     # Coordinates still present; topology label just blank without the .3line.
     assert rows["Medtr0015s0030.1"]["tm_regions"] == "265-285"
     assert rows["Medtr0015s0030.1"]["topology"] == ""
+
+
+def test_local_run_ignores_stale_biolib_output(tmp_path, monkeypatch):
+    cfg = Config(root=tmp_path, DEEPTMHMM_MODE="local", DEEPTMHMM_DIR=str(tmp_path / "tool"))
+    (tmp_path / "tool").mkdir()
+    (tmp_path / "tool" / "predict.py").write_text("# stub\n")
+    cfg.result("final_candidates.fasta").parent.mkdir(parents=True, exist_ok=True)
+    cfg.result("final_candidates.fasta").write_text(">new\nAAAA\n")
+    stale = cfg.result("deeptmhmm_out") / "biolib_results"
+    stale.mkdir(parents=True)
+    (stale / "TMRs.gff3").write_text("# stale Length: 1\nstale\tTMhelix\t1\t1\n")
+
+    def fake_run(cmd, **kwargs):
+        out = cfg.result("deeptmhmm_out") / "predict"
+        out.mkdir(parents=True)
+        (out / "TMRs.gff3").write_text("# fresh Length: 1\nfresh\tTMhelix\t1\t1\n")
+
+    monkeypatch.setattr(deeptmhmm.external, "run", fake_run)
+    deeptmhmm.run(cfg)
+    rows = io.read_tsv(cfg.result("deeptmhmm.tsv"))
+    assert rows["protein_id"].tolist() == ["fresh"]
+
+
+def test_unknown_deeptmhmm_mode_fails_explicitly(tmp_path):
+    cfg = Config(root=tmp_path, DEEPTMHMM_MODE="loacl")
+    cfg.result("final_candidates.fasta").parent.mkdir(parents=True, exist_ok=True)
+    cfg.result("final_candidates.fasta").write_text(">p\nAAAA\n")
+    with pytest.raises(ValueError, match="must be 'local' or 'biolib'"):
+        deeptmhmm.run(cfg)

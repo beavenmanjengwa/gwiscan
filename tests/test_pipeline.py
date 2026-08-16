@@ -1,9 +1,14 @@
-"""Stage-ordering guard for the linear pipeline.
-
-Every stage's required input must be produced by an earlier stage. The key
-regression this locks: domain-bed runs before extract-domains (domains.run
-hard-requires results/domains.bed). This is what a per-stage unit test cannot
-catch, and it is exactly what was missing before.
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_pipeline.py - Stage-ordering guard for the linear pipeline.                                 #
+#                                                                                                  #
+# Every stage's required input must be produced by an earlier stage. The key rule this locks:      #
+# domain-bed runs before extract-domains (domains.run hard-requires the domain BED file), which a  #
+# per-stage unit test cannot catch.                                                                #
+#                                                                                                  #
+####################################################################################################
 """
 
 import pytest
@@ -42,7 +47,7 @@ def _patch_all(monkeypatch, calls, tools_available=True):
     monkeypatch.setattr(pipeline.domains, "run", recorder("extract_domains"))
     monkeypatch.setattr(pipeline.mature, "run", recorder("extract_mature"))
     monkeypatch.setattr(pipeline.msa, "run", recorder("msa"))
-    monkeypatch.setattr(pipeline.trimal, "run", recorder("trim"))
+    monkeypatch.setattr(pipeline.clipkit, "run", recorder("trim"))
     monkeypatch.setattr(pipeline.logos, "run", recorder("weblogo"))
     monkeypatch.setattr(pipeline.meme, "run", recorder("meme"))
     monkeypatch.setattr(pipeline.iqtree, "run", recorder("iqtree"))
@@ -63,7 +68,8 @@ def test_domain_bed_precedes_extract_domains(tmp_path, monkeypatch):
 def test_stage_prerequisite_ordering(tmp_path, monkeypatch):
     calls = []
     _patch_all(monkeypatch, calls)
-    pipeline.run(Config(root=tmp_path))
+    # iqtree is off by default; add it so the tree's ordering can be checked.
+    pipeline.run(Config(root=tmp_path, ADD_STAGES=["iqtree"]))
 
     order = {name: i for i, name in enumerate(calls)}
     # setup -> searches -> merge -> interpro -> confirm
@@ -77,7 +83,7 @@ def test_stage_prerequisite_ordering(tmp_path, monkeypatch):
         assert order["extract_domains"] < order[downstream]
     # the mature track: targetp -> extract-mature -> msa (mature tree)
     assert order["targetp"] < order["extract_mature"] < order["msa"]
-    # trimAl runs after the MSA and before IQ-TREE (it feeds the tree)
+    # ClipKIT runs after the MSA and before IQ-TREE (it feeds the tree)
     assert order["msa"] < order["trim"] < order["iqtree"]
     # the ProtParam figures run after compile (they read the compiled table)
     assert order["compile"] < order["figures"]
@@ -114,7 +120,7 @@ def test_skip_stages_are_not_invoked_but_run_continues(tmp_path, monkeypatch):
     # abort the whole run. --skip meme must let iqtree/provenance still run.
     calls = []
     _patch_all(monkeypatch, calls)
-    cfg = Config(root=tmp_path, SKIP_STAGES=["meme"])
+    cfg = Config(root=tmp_path, SKIP_STAGES=["meme"], ADD_STAGES=["iqtree"])
     pipeline.run(cfg)
 
     assert "meme" not in calls
@@ -139,7 +145,8 @@ def test_missing_optional_tool_is_auto_skipped_not_fatal(tmp_path, monkeypatch):
     # meme's binary is unavailable; weblogo and iqtree are present.
     monkeypatch.setattr(pipeline.external, "available",
                         lambda tool: tool != "meme")
-    pipeline.run(Config(root=tmp_path))  # MEME_BIN defaults to "meme"
+    # iqtree is off by default; add it so its "tool present" path is exercised.
+    pipeline.run(Config(root=tmp_path, ADD_STAGES=["iqtree"]))  # MEME_BIN defaults to "meme"
 
     assert "meme" not in calls
     assert "weblogo" in calls
@@ -151,7 +158,7 @@ def test_all_optional_tools_missing_still_completes(tmp_path, monkeypatch):
     calls = []
     _patch_all(monkeypatch, calls)
     # Every optional-tool binary is missing; a required-stage function is not.
-    optional_bins = {"trimal", "weblogo", "meme", "iqtree"}
+    optional_bins = {"clipkit", "weblogo", "meme", "iqtree"}
     monkeypatch.setattr(pipeline.external, "available",
                         lambda tool: tool not in optional_bins)
     pipeline.run(Config(root=tmp_path))
@@ -161,6 +168,21 @@ def test_all_optional_tools_missing_still_completes(tmp_path, monkeypatch):
     # the core identification + annotation path still ran end to end
     for ran in ("hmm", "diamond", "merge", "interpro", "compile", "provenance"):
         assert ran in calls
+
+
+def test_tree_workflow_off_by_default_added_on_request(tmp_path, monkeypatch):
+    # The phylogeny workflow (trim + iqtree) is off by default: a plain run builds
+    # neither, and everything downstream of it (provenance) still runs.
+    calls = []
+    _patch_all(monkeypatch, calls)
+    pipeline.run(Config(root=tmp_path))
+    assert "iqtree" not in calls and "trim" not in calls
+    assert "compile" in calls and "provenance" in calls
+
+    # --add iqtree turns on the whole workflow: it pulls in its trim prerequisite.
+    calls.clear()
+    pipeline.run(Config(root=tmp_path, ADD_STAGES=["iqtree"]))
+    assert "iqtree" in calls and "trim" in calls
 
 
 def test_explicit_skip_message_wins_over_auto_skip(tmp_path, monkeypatch, capsys):

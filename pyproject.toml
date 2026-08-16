@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "Beaven Manjengwa" }]
-keywords = ["bioinformatics", "gene-family", "hmmer", "diamond", "interproscan", "annotation", "proteome"]
+keywords = ["genome-wide identification", "genome-wide study", "genome-wide analysis", "annotation pipeline", "bioinformatics"]
 
 dependencies = [
     "biopython>=1.80",
@@ -21,9 +21,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# WebLogo is optional: only the `weblogo` step needs it, and it pulls in
-# a heavier dependency tree than the core annotation steps.
-logos = ["weblogo>=3.7"]
 dev = ["pytest>=7.0"]
 
 [project.scripts]

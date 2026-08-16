@@ -1,7 +1,13 @@
-"""Tests for the per-family detectability profile (score stage).
-
-The cases mirror the two empirically observed extremes: a conserved family both
-searches recover, and a divergent family only the profile HMM recovers.
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_score.py - Per-family detectability-profile tests (score stage).                            #
+#                                                                                                  #
+# The cases mirror the two extremes: a conserved family both searches recover, and a divergent     #
+# family only the profile HMM recovers.                                                            #
+#                                                                                                  #
+####################################################################################################
 """
 
 from gwiscan.score import HEADER, family_metrics, round1_subjects, verdict

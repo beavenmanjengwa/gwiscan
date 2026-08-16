@@ -1,7 +1,13 @@
-"""Tests for the per-candidate evidence mark (compile stage).
-
-The level carries one '+' per method supporting the call, so the tests pin the
-mark against the criteria naming it: the two must always agree.
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_confidence.py - Per-candidate evidence-mark tests (compile stage).                          #
+#                                                                                                  #
+# The level carries one '+' per method supporting the call, so the tests pin the mark against the  #
+# criteria naming it: the two must always agree.                                                   #
+#                                                                                                  #
+####################################################################################################
 """
 
 import pandas as pd

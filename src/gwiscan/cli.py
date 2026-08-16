@@ -27,6 +27,7 @@ from . import (
     figures,
     hmm,
     iqtree,
+    clipkit,
     domain_bed,
     logos,
     mature,
@@ -38,7 +39,6 @@ from . import (
     score,
     setupdb,
     species,
-    trimal,
 )
 from . import compile as compile_stage
 from .config import Config
@@ -51,27 +51,27 @@ COMMANDS = {
     "search-hmm": ("Run hmmscan and parse hits", hmm.run),
     "search-diamond": ("Run two-round DIAMOND BLASTp", diamond.run),
     "merge": ("Merge HMM + DIAMOND candidates", candidates.run),
-    "architecture": ("Two-pass hmmscan for domain-combination candidates (MODE: architecture)", architecture.run),
-    "score": ("Per-family detectability profile (hmmscan vs DIAMOND)", score.run),
-    "protparam": ("Physicochemical properties (ProtParam)", protparam.run),
-    "targetp": ("Signal/transit peptides (TargetP 2.0)", targetp.run),
-    "deeptmhmm": ("Transmembrane topology (DeepTMHMM)", deeptmhmm.run),
-    "deeploc": ("Subcellular localization (DeepLoc 2.1)", deeploc.run),
-    "interpro": ("Domain/GO annotation (EBI InterProScan)", interpro.run),
-    "confirm": ("Confirm final candidates via InterProScan (gate)", confirm.run),
-    "domain-bed": ("BED of family domain coordinates (from InterProScan)", domain_bed.run),
-    "coords": ("Genomic coordinates of members (GTF/GFF3)", coords.run),
+    "architecture": ("Identify proteins with a given domain architecture", architecture.run),
+    "score": ("Per-family detectability profile", score.run),
+    "protparam": ("Physicochemical properties", protparam.run),
+    "targetp": ("Signal/transit peptides", targetp.run),
+    "deeptmhmm": ("Transmembrane topology", deeptmhmm.run),
+    "deeploc": ("Subcellular localization", deeploc.run),
+    "interpro": ("Domain + GO annotation", interpro.run),
+    "confirm": ("Confirm final candidates via InterProScan", confirm.run),
+    "domain-bed": ("BED of family domain coordinates", domain_bed.run),
+    "coords": ("Genomic coordinates of members", coords.run),
     "compile": ("Join tables into final TSV + XLSX", compile_stage.run),
     "extract-domains": ("Extract per-family domain sequences", domains.run),
     "extract-mature": ("Per-family TargetP mature sequences", mature.run),
     "msa": ("Per-family MAFFT alignment", msa.run),
-    "trim": ("Trim alignments before trees (trimAl -automated1)", trimal.run),
+    "trim": ("Trim alignments before trees", clipkit.run),
     "weblogo": ("Per-family conservation logos", logos.run),
     "meme": ("Per-family MEME motif discovery", meme.run),
-    "iqtree": ("Per-family ML trees (IQ-TREE)", iqtree.run),
-    "figures": ("ProtParam distribution figures + stats (R)", figures.run),
+    "iqtree": ("Per-family ML trees", iqtree.run),
+    "figures": ("ProtParam distribution figures + stats", figures.run),
     "provenance": ("Write run provenance", provenance.run),
-    "run": ("Run the full pipeline (multi-species if config/species.tsv exists)", None),
+    "run": ("Run the full pipeline", None),
 }
 
 
@@ -86,6 +86,7 @@ def _run(cfg: Config) -> None:
 _OVERRIDE_KEYS = (
     "OUTPUT",
     "THREADS",
+    "VERBOSE",
     "MODE",
     "DIAMOND_EVALUE",
     "DIAMOND_IDENTITY",
@@ -109,8 +110,8 @@ _OVERRIDE_KEYS = (
     "MEME_NMOTIFS",
     "WEBLOGO_BIN",
     "MEME_BIN",
-    "TRIMAL_BIN",
-    "TRIMAL_METHOD",
+    "CLIPKIT_BIN",
+    "CLIPKIT_MODE",
     "RSCRIPT_BIN",
     "IQTREE_BIN",
     "IQTREE_MODEL",
@@ -122,6 +123,7 @@ _OVERRIDE_KEYS = (
     "FROM_STAGE",
     "UNTIL_STAGE",
     "SKIP_STAGES",
+    "ADD_STAGES",
     "SPECIES_ONLY",
     "RETRY_FAILED",
 )
@@ -135,6 +137,9 @@ def _add_global_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--config", default=None, help="Path to config.yaml")
     p.add_argument("-p", "--threads", dest="THREADS", type=int, default=None,
                    help="Worker threads / CPUs (default 4)")
+    p.add_argument("--verbose", dest="VERBOSE", action=argparse.BooleanOptionalAction, default=None,
+                   help="Stream each stage's full output to the terminal. Default: off — "
+                        "only stage start/done is shown; full detail always goes to logs/.")
     p.add_argument("--mode", dest="MODE", default=None,
                    choices=["family", "superfamily", "architecture"],
                    help="Mode: family (flat), superfamily (grouped rollup), or "
@@ -189,10 +194,10 @@ def _add_global_opts(p: argparse.ArgumentParser) -> None:
                    help="WebLogo executable: PATH name or absolute path (default weblogo)")
     p.add_argument("--meme-bin", dest="MEME_BIN", default=None,
                    help="MEME executable: PATH name or absolute path (default meme)")
-    p.add_argument("--trimal-bin", dest="TRIMAL_BIN", default=None,
-                   help="trimAl executable: PATH name or absolute path (default trimal)")
-    p.add_argument("--trimal-method", dest="TRIMAL_METHOD", default=None,
-                   help="trimAl heuristic: automated1 (default), gappyout, strict, strictplus")
+    p.add_argument("--clipkit-bin", dest="CLIPKIT_BIN", default=None,
+                   help="ClipKIT executable: PATH name or absolute path (default clipkit)")
+    p.add_argument("--clipkit-mode", dest="CLIPKIT_MODE", default=None,
+                   help="ClipKIT trimming mode: smart-gap (default), gappy, kpic, kpic-smart-gap, ...")
     p.add_argument("--rscript-bin", dest="RSCRIPT_BIN", default=None,
                    help="Rscript executable for the figures stage (default Rscript)")
     p.add_argument("--iqtree-bin", dest="IQTREE_BIN", default=None,
@@ -225,6 +230,11 @@ def _add_run_opts(p: argparse.ArgumentParser) -> None:
                    help="Comma-separated stage(s) to skip entirely (e.g. an optional "
                         "tool you don't have installed), continuing past them instead "
                         "of aborting the run. See --list-stages.")
+    p.add_argument("--add", dest="ADD_STAGES", default=None,
+                   type=lambda s: [x.strip() for x in s.split(",") if x.strip()],
+                   help="Comma-separated stage(s) that are off by default to turn on "
+                        "for this run: the phylogeny workflow trim + iqtree. "
+                        "'--add iqtree' also runs its trim prerequisite. See --list-stages.")
     p.add_argument("--list-stages", action="store_true",
                    help="Print the ordered stage keys (for --from-stage/--until/--skip) and exit.")
     p.add_argument("--only-species", dest="SPECIES_ONLY", default=None,

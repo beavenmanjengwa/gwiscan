@@ -1,9 +1,14 @@
-"""Tests for TargetP 2.0 short-summary parsing.
-
-The full summary is kept for reproducibility (type + per-class probabilities +
-cleavage site). Parsing reads the summary's own header, so it stays correct for
-the *plant* layout (``-org pl``, extra cTP/luTP columns) and keeps the
-space-containing CS field intact.
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_targetp.py - TargetP 2.0 short-summary parsing tests.                                       #
+#                                                                                                  #
+# The full summary is kept for reproducibility (type + per-class probabilities + cleavage site).   #
+# Parsing reads the summary's own header, so it stays correct for the plant layout (-org pl, extra #
+# cTP/luTP columns) and keeps the space-containing CS field intact.                                #
+#                                                                                                  #
+####################################################################################################
 """
 
 from gwiscan.features.targetp import parse_summary, resolve_targetp

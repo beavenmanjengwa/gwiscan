@@ -1,8 +1,14 @@
-"""Tests for DIAMOND search: round options, seed selection, best-per-member.
-
-Both rounds search the proteome (hit proteins are the subject, sseqid). Round 1
-is --very-sensitive, E-value only. Round-2 seeds are HMM-validated (round-1 hits
-that also pass hmmscan) when the family has an HMM, else Blast Score Ratio.
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_diamond.py - DIAMOND search tests: round options, seed selection, best-per-member.          #
+#                                                                                                  #
+# Both rounds search the proteome (hit proteins are the subject, sseqid). Round 1 is --very-       #
+# sensitive, E-value only. Round-2 seeds are HMM-validated (round-1 hits that also pass hmmscan)   #
+# when the family has an HMM, else Blast Score Ratio.                                              #
+#                                                                                                  #
+####################################################################################################
 """
 
 from gwiscan import diamond

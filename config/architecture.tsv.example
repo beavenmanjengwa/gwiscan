@@ -1,6 +1,6 @@
-# ============================================================================
-# GWIscan architecture table — ARCHITECTURE mode (domain combinations)
-# ============================================================================
+# ==================================================================================#
+# GWIscan architecture table — ARCHITECTURE mode (domain combinations)              #
+# ==================================================================================#
 # Copy this file to  config/architecture.tsv  and edit it for your study, and set
 #   MODE: architecture   in config.yaml.
 #
@@ -37,7 +37,8 @@
 #
 #   Class         Optional rollup label grouping architectures. Defaults to the
 #                 Architecture name if blank ('-').
-# ----------------------------------------------------------------------------
+#
+# -----------------------------------------------------------------------------------
 # The three classic LecRLK subtypes, seeded on the lectin ectodomain (Pfams from
 # the oat LecRLK study): G-type B_lectin PF01453, L-type Lectin_legB PF00139,
 # C-type Lectin_C PF00059; the required kinase is Pkinase PF00069 or Pkinase_Tyr

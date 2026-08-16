@@ -35,6 +35,21 @@ def _to_bool(value):
     return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
+def _kv_int_map(value):
+    """Parse a per-stage concurrency map. Accepts a dict as-is (YAML), or a
+    'stage=N,stage=N' string (env/CLI) -> {stage: int}."""
+    if isinstance(value, dict):
+        return {str(k): int(v) for k, v in value.items()}
+    out = {}
+    for item in str(value).split(","):
+        item = item.strip()
+        if not item:
+            continue
+        key, _, num = item.partition("=")
+        out[key.strip()] = int(num.strip() or 0)
+    return out
+
+
 # Intermediate working files are grouped into per-tool subfolders so the working
 # directory is navigable instead of one flat dump. Config.result() routes a
 # filename to its subfolder via _result_subdir(); everything read/written through
@@ -66,6 +81,11 @@ def _result_subdir(name: str) -> str:
 # config.yaml key, the environment variable, and the Config field.
 DEFAULTS = {
     "THREADS": 4,
+    # Terminal output detail. false (default) shows only the high-level stage
+    # progress ([STAGE] ... [DONE]). true (--verbose) also streams each stage's full
+    # output (commands, tool output, every [OK]) to the terminal. Either way the
+    # full detail is written to the per-stage logs/ files.
+    "VERBOSE": False,
     # Where final_results/, intermediate/ and logs/ are written. Empty = the
     # project directory (--workdir), so outputs sit next to the inputs by default.
     # Set it (CLI -o/--output or OUTPUT here) to send outputs to a separate
@@ -107,8 +127,8 @@ DEFAULTS = {
     "EBI_EMAIL": "",
     # InterProScan 6 member database(s), comma-separated. Default Pfam + CDD;
     # InterProScan runs all requested DBs on the small candidate set for the full
-    # domain architecture + GO. Add more (SMART, PROSITEProfiles, SUPERFAMILY, ...).
-    "INTERPRO_APPL": "Pfam,CDD,PROSITE-profiles",
+    # domain architecture + GO. Add more (SMART, ProSiteProfiles, SUPERFAMILY, ...).
+    "INTERPRO_APPL": "Pfam,CDD,ProSiteProfiles",
     # How InterProScan runs:
     #   "api"   — EBI InterProScan 6 REST API (needs EBI_EMAIL, internet).
     #   "local" — a local install (INTERPROSCAN_BIN), offline-capable, no email.
@@ -132,6 +152,19 @@ DEFAULTS = {
     # DeepTMHMM biolib version. 1.0.24 runs LOCALLY (seconds); newer tags (e.g.
     # 1.0.57) route to biolib's cloud and queue for minutes. See deeptmhmm.py.
     "DEEPTMHMM_VERSION": "1.0.24",
+    # How the deeptmhmm stage runs:
+    #   "biolib" — the biolib CLI (DEEPTMHMM_VERSION above); needs internet/queue.
+    #   "local"  — a standalone academic install (predict.py + deeptmhmm_cv_*.model),
+    #              no biolib, no network. Set DEEPTMHMM_DIR to that folder and
+    #              DEEPTMHMM_PYTHON to a Python that can import its requirements.
+    "DEEPTMHMM_MODE": "biolib",
+    # Local mode: the standalone DeepTMHMM directory containing predict.py and the
+    # deeptmhmm_cv_*.model / esm_model_*.pt files. predict.py loads those relative
+    # to its own directory, so the stage runs with cwd set here.
+    "DEEPTMHMM_DIR": "",
+    # Local mode: the Python interpreter used to run predict.py (e.g. the DeepTMHMM
+    # conda env's bin/python). Empty falls back to "python" on PATH.
+    "DEEPTMHMM_PYTHON": "",
     # ProtParam output formats — any of tsv, xlsx, csv. tsv feeds the pipeline join.
     "PROTPARAM_FORMATS": ["tsv", "xlsx"],
     # Prefix for systematic domain ids (e.g. "Ath" -> AthGNA001.1). One species
@@ -145,13 +178,13 @@ DEFAULTS = {
     # live in a separate conda env without being on the PATH `gwiscan` runs from.
     "WEBLOGO_BIN": "weblogo",
     "MEME_BIN": "meme",
-    # trimAl: trims each MAFFT alignment before tree-building. TRIMAL_METHOD is a
-    # trimAl heuristic (automated1 [default], gappyout, strict, strictplus);
-    # written as -automated1 on the command line. Only IQ-TREE uses the trimmed
-    # alignment (WebLogo/MEME keep the full one). Optional -- if trimAl isn't
+    # ClipKIT trims each MAFFT alignment before tree-building. CLIPKIT_MODE is the
+    # column-filter mode (smart-gap [default], gappy, kpic, kpic-smart-gap, ...);
+    # smart-gap is a gentle, gap-aware filter. Only IQ-TREE uses the trimmed
+    # alignment (WebLogo/MEME keep the full one). Optional -- if ClipKIT isn't
     # installed the `trim` stage is skipped and iqtree uses the untrimmed alignment.
-    "TRIMAL_BIN": "trimal",
-    "TRIMAL_METHOD": "automated1",
+    "CLIPKIT_BIN": "clipkit",
+    "CLIPKIT_MODE": "smart-gap",  # clipkit -m mode (smart-gap, gappy, kpic, kpic-smart-gap, ...)
     # IQ-TREE per-family phylogenetic trees. Install via conda so iqtree is on
     # PATH: conda install bioconda::iqtree
     # ProtParam distribution figures + stats (figures stage). Runs the bundled
@@ -163,12 +196,25 @@ DEFAULTS = {
     "IQTREE_SEED": 12345,       # RNG seed (-seed) so trees/support values are reproducible
     # Multi-species mode: how many species pipelines run concurrently.
     #   0 (default) = auto = cores // THREADS, so species × per-species threads
-    #                 totals ~one thread per core (full CPU use, no oversubscription,
-    #                 bounded RAM / InterProScan-API load).
+    #                 totals ~one thread per core (full CPU use, no oversubscription).
     #   N > 0       = run exactly N species at once (raise it if the machine has
     #                 the RAM/cores; lower it to be gentler on the EBI API).
     # Each species is still independent — the smallest proteomes finish first.
     "SPECIES_PARALLEL": 0,
+    # Multi-species runs are scheduled stage-by-stage: every species clears one
+    # stage before any moves to the next (a barrier), so per-stage concurrency can
+    # differ. SPECIES_PARALLEL sets the default width; these two refine it per stage.
+    #   SERIAL_STAGES  = stages that run one species at a time. When a tool needs a
+    #                    scarce resource (a single GPU, a large in-RAM model, or a
+    #                    license-limited binary), running several species at once
+    #                    thrashes or fails, so DeepTMHMM (GPU/ESM), TargetP and DeepLoc
+    #                    (big models) run serially by default.
+    #   STAGE_PARALLEL = explicit {stage: N} overrides that take precedence over both
+    #                    the default width and SERIAL_STAGES (e.g. {deeptmhmm: 2}).
+    # Within each stage the per-species thread count is rebalanced to fill the
+    # machine, so a stage that runs one species at a time still gets all the cores.
+    "SERIAL_STAGES": ["deeptmhmm", "targetp", "deeploc"],
+    "STAGE_PARALLEL": {},
     # `run` resume/stop/skip (see pipeline.plan_stages; `gwiscan run --list-stages`
     # prints the valid keys). FROM_STAGE/UNTIL_STAGE resume from or stop after a
     # named stage (inclusive); earlier/later stages' outputs must already be on
@@ -178,6 +224,13 @@ DEFAULTS = {
     "FROM_STAGE": "",
     "UNTIL_STAGE": "",
     "SKIP_STAGES": [],
+    # ADD_STAGES (--add) opts into stages that are OFF by default (see
+    # pipeline.DEFAULT_OFF_STAGES) -- the phylogeny workflow: ClipKIT trimming
+    # (trim) and the per-family tree (iqtree), which are slow and add nothing to
+    # the final annotation table. `ADD_STAGES: [iqtree]` (or --add iqtree) runs the
+    # whole workflow: adding iqtree pulls in its trim prerequisite automatically.
+    # Running `gwiscan trim` / `gwiscan iqtree` directly always works regardless.
+    "ADD_STAGES": [],
     # Multi-species subset selection (see species.py). SPECIES_ONLY
     # (--only-species) runs only the named manifest prefixes; RETRY_FAILED
     # (--retry-failed) re-runs just the species marked FAILED in the previous
@@ -191,6 +244,7 @@ DEFAULTS = {
 # name IS the config key (both UPPER_CASE); keys without an entry stay as-is.
 _CASTERS = {
     "THREADS": int,
+    "VERBOSE": _to_bool,
     "DIAMOND_IDENTITY": int,
     "DIAMOND_COVERAGE_R2": int,
     "DIAMOND_SENSITIVE_R2": _to_bool,
@@ -204,15 +258,26 @@ _CASTERS = {
     "IQTREE_BOOTSTRAP": int,
     "IQTREE_SEED": int,
     "SKIP_STAGES": _csv_list,
+    "ADD_STAGES": _csv_list,
     "SPECIES_ONLY": _csv_list,
+    "SERIAL_STAGES": _csv_list,
+    "STAGE_PARALLEL": _kv_int_map,
     "RETRY_FAILED": _to_bool,
 }
+
+# Every setting can be given as GWISCAN_<KEY> (preferred) or the bare <KEY> (kept
+# for back-compat). These few keys have generic names a shell or another tool may
+# already export for its own purposes, so reading one from the bare environment is
+# worth a heads-up -- the prefixed form avoids the clash. The rest of the keys are
+# gwiscan-specific enough that a bare-name clash is unlikely, so they read silently.
+_GENERIC_ENV_KEYS = {"THREADS", "OUTPUT", "MODE", "ANNOTATION"}
 
 
 @dataclass
 class Config:
     root: Path
     THREADS: int = 4
+    VERBOSE: bool = False
     OUTPUT: str = ""
     MODE: str = "family"
     DIAMOND_EVALUE: str = "1e-5"
@@ -224,7 +289,7 @@ class Config:
     ANNOTATION: str = ""
     PRIMARY_TRANSCRIPT: bool = True
     EBI_EMAIL: str = ""
-    INTERPRO_APPL: str = "Pfam,CDD,PROSITE-profiles"
+    INTERPRO_APPL: str = "Pfam,CDD,ProSiteProfiles"
     INTERPRO_MODE: str = "api"
     INTERPROSCAN_BIN: str = "interproscan.sh"
     INTERPRO_LOOKUP: bool = False
@@ -234,23 +299,29 @@ class Config:
     DEEPLOC_BIN: str = "deeploc2"
     DEEPLOC_MODEL: str = "Accurate"
     DEEPTMHMM_VERSION: str = "1.0.24"
+    DEEPTMHMM_MODE: str = "biolib"
+    DEEPTMHMM_DIR: str = ""
+    DEEPTMHMM_PYTHON: str = ""
     PROTPARAM_FORMATS: list = field(default_factory=lambda: ["tsv", "xlsx"])
     SPECIES_PREFIX: str = ""
     MEME_NMOTIFS: int = 15
     WEBLOGO_BIN: str = "weblogo"
     MEME_BIN: str = "meme"
-    TRIMAL_BIN: str = "trimal"
-    TRIMAL_METHOD: str = "automated1"
+    CLIPKIT_BIN: str = "clipkit"
+    CLIPKIT_MODE: str = "smart-gap"
     RSCRIPT_BIN: str = "Rscript"
     IQTREE_BIN: str = "iqtree"
     IQTREE_MODEL: str = "MFP"
     IQTREE_BOOTSTRAP: int = 1000
     IQTREE_SEED: int = 12345
     SPECIES_PARALLEL: int = 0
+    SERIAL_STAGES: list = field(default_factory=lambda: ["deeptmhmm", "targetp", "deeploc"])
+    STAGE_PARALLEL: dict = field(default_factory=dict)
     # `run` resume/stop/skip -- see DEFAULTS above and pipeline.plan_stages.
     FROM_STAGE: str = ""
     UNTIL_STAGE: str = ""
     SKIP_STAGES: list = field(default_factory=list)
+    ADD_STAGES: list = field(default_factory=list)
     # Multi-species subset selection -- see DEFAULTS above and species.py.
     SPECIES_ONLY: list = field(default_factory=list)
     RETRY_FAILED: bool = False
@@ -418,13 +489,32 @@ class Config:
         if cfg_path.exists():
             with open(cfg_path) as fh:
                 loaded = yaml.safe_load(fh) or {}
+            # A misspelled key would otherwise be dropped silently and the default
+            # used, so name any unrecognised settings instead of ignoring them.
+            unknown = sorted(k for k in loaded if k not in DEFAULTS)
+            if unknown:
+                from . import external
+                external.log(f"[WARN] {cfg_path.name}: ignoring unknown setting(s) "
+                             f"{', '.join(unknown)} — check them against the documented keys.")
             values.update({k: v for k, v in loaded.items() if k in DEFAULTS})
 
-        # Env var name == config key (both UPPER_CASE); cast string values.
+        # Env overrides: GWISCAN_<KEY> takes precedence, then the bare <KEY>
+        # (back-compat). Cast string values. A bare generic name (THREADS/OUTPUT/
+        # MODE/ANNOTATION) is honoured but flagged, since it may have been exported
+        # by something unrelated -- GWISCAN_<KEY> is the unambiguous form.
         for key in DEFAULTS:
+            prefixed = os.environ.get(f"GWISCAN_{key}")
+            if prefixed is not None:
+                values[key] = _CASTERS.get(key, str)(prefixed)
+                continue
             raw = os.environ.get(key)
             if raw is not None:
                 values[key] = _CASTERS.get(key, str)(raw)
+                if key in _GENERIC_ENV_KEYS:
+                    from . import external
+                    external.log(f"[WARN] using environment variable {key}={raw!r}; its name is "
+                                 f"generic, so set GWISCAN_{key} instead to avoid picking up an "
+                                 f"unrelated value from the environment.")
 
         if overrides:
             values.update({k: v for k, v in overrides.items() if v is not None})

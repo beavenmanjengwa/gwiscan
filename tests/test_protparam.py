@@ -1,4 +1,11 @@
-"""Tests for the ProtParam property computation."""
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_protparam.py - ProtParam property-computation tests.                                        #
+#                                                                                                  #
+####################################################################################################
+"""
 
 from gwiscan.features.protparam import COLUMNS, properties
 

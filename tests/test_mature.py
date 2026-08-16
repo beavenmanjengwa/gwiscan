@@ -1,7 +1,13 @@
-"""Tests for the mature-sequence track (TargetP -mature -> per-family FASTAs).
-
-This is an independent track from the domain track: full mature sequences
-(presequence cleaved) grouped per family, for a mature-sequence tree.
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_mature.py - Mature-sequence track tests (TargetP -mature -> per-family FASTAs).             #
+#                                                                                                  #
+# An independent track from the domain track: full mature sequences (presequence cleaved) grouped  #
+# per family, for a mature-sequence tree.                                                          #
+#                                                                                                  #
+####################################################################################################
 """
 
 import pandas as pd

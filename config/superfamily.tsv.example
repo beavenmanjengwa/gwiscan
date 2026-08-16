@@ -1,6 +1,6 @@
-# ============================================================================
-# GWIscan family table — SUPERFAMILY mode (families grouped under a superfamily)
-# ============================================================================
+# =================================================================================#
+# GWIscan family table — SUPERFAMILY mode (families grouped under a superfamily)   #
+# =================================================================================#
 # Copy this file to  config/superfamily.tsv  and edit it for your study families,
 # and set  MODE: superfamily  in config.yaml.
 #
@@ -33,6 +33,7 @@
 #               query. DIAMOND runs for every family, so this is required for all.
 #
 # Rule: InterProScan runs ONLY for families whose PfamModel is a Pfam accession.
+
 # ----------------------------------------------------------------------------
 Superfamily	Family	PfamModel	BlastModel
 # specific Pfam -> hmmscan + DIAMOND, InterProScan-confirmed:

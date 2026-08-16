@@ -1,4 +1,11 @@
-"""Tests for the IQ-TREE per-family command builder."""
+#!/usr/bin/env python3
+"""
+####################################################################################################
+#                                                                                                  #
+# test_iqtree.py - IQ-TREE per-family command-builder tests.                                       #
+#                                                                                                  #
+####################################################################################################
+"""
 
 from gwiscan.config import Config
 from gwiscan.iqtree import _iqtree_cmd

@@ -16,6 +16,8 @@
 from __future__ import annotations
 
 import re
+import shutil
+from pathlib import Path
 
 from .. import external, io
 from ..config import Config
@@ -25,6 +27,8 @@ OUT_HEADER = ["protein_id", "topology", "signal_peptide", "tm_regions",
 
 TOPOLOGY_FILE = "predicted_topologies.3line"
 GFF_FILE = "TMRs.gff3"
+BIOLIB_OUTPUT_DIR = "biolib_results"
+LOCAL_OUTPUT_DIR = "predict"
 
 _LENGTH_RE = re.compile(r"#\s+(\S+)\s+Length:\s+(\d+)")
 
@@ -103,6 +107,58 @@ def build_rows(gff_path, three_line_path=None) -> list:
     return rows
 
 
+def _run_biolib(cfg: Config, cand_fasta: Path, out_dir: Path) -> Path:
+    """Run DeepTMHMM through the biolib CLI (default; needs internet/queue)."""
+    external.require("biolib")
+    app = "DTU/DeepTMHMM"
+    if cfg.DEEPTMHMM_VERSION:
+        app += f":{cfg.DEEPTMHMM_VERSION}"
+    external.log(f"[deeptmhmm] Running {app}...")
+    # No --output flag; biolib writes into biolib_results/ under cwd, so run in
+    # out_dir. Pass an absolute FASTA path since cwd is changed.
+    run_dir = out_dir / BIOLIB_OUTPUT_DIR
+    if run_dir.exists():
+        shutil.rmtree(run_dir)
+    external.run(
+        ["biolib", "run", app, "--fasta", cand_fasta.resolve()],
+        cwd=out_dir,
+    )
+    return run_dir
+
+
+def _run_local(cfg: Config, cand_fasta: Path, out_dir: Path) -> Path:
+    """Run a standalone academic DeepTMHMM install (predict.py) — no biolib.
+
+    predict.py loads its deeptmhmm_cv_*.model / esm_model_*.pt weights relative to
+    its own directory, so it runs with cwd = DEEPTMHMM_DIR. It also refuses an
+    --output-dir that already exists, so a fresh 'predict' subdir under out_dir is
+    used (cleared first for idempotent re-runs). The same TMRs.gff3 /
+    predicted_topologies.3line land there for the shared parser below.
+    """
+    tool_dir = Path(cfg.DEEPTMHMM_DIR).expanduser()
+    if not cfg.DEEPTMHMM_DIR:
+        raise ValueError(
+            "DEEPTMHMM_MODE is 'local' but DEEPTMHMM_DIR is unset — point it at the "
+            "standalone DeepTMHMM folder (the one with predict.py and deeptmhmm_cv_*.model)."
+        )
+    predict = tool_dir / "predict.py"
+    if not predict.exists():
+        raise FileNotFoundError(f"predict.py not found in DEEPTMHMM_DIR: {predict}")
+
+    python = cfg.DEEPTMHMM_PYTHON or "python"
+    predict_out = out_dir / LOCAL_OUTPUT_DIR
+    if predict_out.exists():
+        shutil.rmtree(predict_out)
+
+    external.log(f"[deeptmhmm] Running local DeepTMHMM: {python} {predict} (cwd={tool_dir})")
+    external.run(
+        [python, str(predict), "--fasta", str(cand_fasta.resolve()),
+         "--output-dir", str(predict_out.resolve())],
+        cwd=tool_dir,
+    )
+    return predict_out
+
+
 def run(cfg: Config) -> None:
     cfg.ensure_dirs()
     cand_fasta = cfg.result("final_candidates.fasta")
@@ -111,28 +167,28 @@ def run(cfg: Config) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if not cand_fasta.exists():
-        raise FileNotFoundError(f"final_candidates.fasta not found: {cand_fasta} (run `confirm` first)")
-    external.require("biolib")
+        preceding_stage = "`architecture`" if cfg.is_architecture else "`confirm`"
+        raise FileNotFoundError(
+            f"final_candidates.fasta not found: {cand_fasta} "
+            f"(run {preceding_stage} / candidate selection first)"
+        )
 
-    app = "DTU/DeepTMHMM"
-    if cfg.DEEPTMHMM_VERSION:
-        app += f":{cfg.DEEPTMHMM_VERSION}"
+    mode = str(cfg.DEEPTMHMM_MODE).strip().lower()
+    if mode == "local":
+        run_dir = _run_local(cfg, cand_fasta, out_dir)
+    elif mode == "biolib":
+        run_dir = _run_biolib(cfg, cand_fasta, out_dir)
+    else:
+        raise ValueError(
+            f"DEEPTMHMM_MODE must be 'local' or 'biolib', not {cfg.DEEPTMHMM_MODE!r}"
+        )
 
-    external.log(f"[deeptmhmm] Running {app}...")
-    # No --output flag; biolib writes into biolib_results/ under cwd, so run in
-    # out_dir. Pass an absolute FASTA path since cwd is changed.
-    external.run(
-        ["biolib", "run", app, "--fasta", cand_fasta.resolve()],
-        cwd=out_dir,
-    )
-
-    gff = sorted(out_dir.rglob(GFF_FILE))
+    gff = sorted(run_dir.rglob(GFF_FILE))
     if not gff:
         raise FileNotFoundError(
-            f"DeepTMHMM produced no {GFF_FILE} under {out_dir} "
-            f"(check the biolib output above)"
+            f"DeepTMHMM ({mode}) produced no {GFF_FILE} under {run_dir}"
         )
-    three = sorted(out_dir.rglob(TOPOLOGY_FILE))
+    three = sorted(run_dir.rglob(TOPOLOGY_FILE))
 
     rows = build_rows(gff[0], three[0] if three else None)
     io.write_tsv(out_tsv, OUT_HEADER, rows)
