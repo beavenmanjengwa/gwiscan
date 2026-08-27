@@ -101,7 +101,7 @@ def test_band_spans_irregular_targetp_columns_match():
 def test_all_real_columns_are_mapped():
     # every column the pipeline can emit belongs to some band (no silent blanks)
     labeled = {c for _, cols in compile_mod.COLUMN_BANDS for c in cols}
-    real = ["protein_id", "family", "superfamily", "gene_id", "chrom", "gene_start",
+    real = ["protein_id", "family", "multifamily", "gene_id", "chrom", "gene_start",
             "gene_end", "strand", "domain_architecture", "family_domain_count", "architecture_type",
             "evidence_level", "evidence_support", "evidence_criteria", "length_aa",
             "molecular_weight", "isoelectric_point", "negatively_charged_residues",

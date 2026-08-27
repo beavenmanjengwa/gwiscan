@@ -114,7 +114,7 @@ def test_unknown_config_key_warns_and_is_ignored(tmp_path, capsys):
 
 
 def test_all_known_keys_produce_no_warning(tmp_path, capsys):
-    (tmp_path / "config.yaml").write_text("THREADS: 8\nMODE: superfamily\n")
+    (tmp_path / "config.yaml").write_text("THREADS: 8\nMODE: multi-family\n")
     Config.load(root=tmp_path)
     assert "unknown setting" not in capsys.readouterr().out
 

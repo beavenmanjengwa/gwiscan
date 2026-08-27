@@ -91,7 +91,7 @@ _OVERRIDE_KEYS = (
     "DIAMOND_EVALUE",
     "DIAMOND_IDENTITY",
     "DIAMOND_COVERAGE_R2",
-    "DIAMOND_SENSITIVE_R2",
+    "DIAMOND_SENSITIVITY",
     "DIAMOND_BSR",
     "PRIMARY_TRANSCRIPT",
     "ANNOTATION",
@@ -141,8 +141,8 @@ def _add_global_opts(p: argparse.ArgumentParser) -> None:
                    help="Stream each stage's full output to the terminal. Default: off — "
                         "only stage start/done is shown; full detail always goes to logs/.")
     p.add_argument("--mode", dest="MODE", default=None,
-                   choices=["family", "superfamily", "architecture"],
-                   help="Mode: family (flat), superfamily (grouped rollup), or "
+                   choices=["family", "multi-family", "architecture"],
+                   help="Mode: family (flat), multi-family (grouped rollup), or "
                         "architecture (domain-combination, hmmscan-only)")
     p.add_argument("--evalue", dest="DIAMOND_EVALUE", default=None,
                    help="DIAMOND E-value cutoff")
@@ -150,9 +150,10 @@ def _add_global_opts(p: argparse.ArgumentParser) -> None:
                    help="DIAMOND round-2 min %% identity (round 1 is E-value only)")
     p.add_argument("--coverage-r2", dest="DIAMOND_COVERAGE_R2", type=int, default=None,
                    help="DIAMOND round-2 min %% query coverage")
-    p.add_argument("--diamond-sensitive-r2", dest="DIAMOND_SENSITIVE_R2",
-                   action=argparse.BooleanOptionalAction, default=None,
-                   help="Round-2 --sensitive (default off)")
+    p.add_argument("--diamond-sensitivity", dest="DIAMOND_SENSITIVITY", default=None,
+                   help="DIAMOND sensitivity mode for both rounds: fast, mid-sensitive, "
+                        "sensitive, more-sensitive, very-sensitive, ultra-sensitive "
+                        "(default ultra-sensitive, matches NCBI BLASTP)")
     p.add_argument("--diamond-bsr", dest="DIAMOND_BSR", type=float, default=None,
                    help="Blast Score Ratio seed cutoff for no-HMM families (default 0.4)")
     p.add_argument("--primary-transcript", dest="PRIMARY_TRANSCRIPT",
@@ -254,7 +255,7 @@ def _config_from_args(args) -> Config:
 # docstring is the source-file header comment (its ASCII box mangles once argparse
 # rewraps it into one paragraph), not user-facing help text.
 _CLI_DESCRIPTION = (
-    "Genome-wide identification and annotation pipeline for gene families or superfamilies. "
+    "GWIscan is a pipeline for the genome-wide identification and annotation of gene families. "
     "One subcommand per pipeline stage, plus `run` for the whole pipeline. "
     "Run `gwiscan <stage> --help` for a stage's options."
 )

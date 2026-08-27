@@ -83,6 +83,19 @@ def test_round1_evalue_only_round2_filtered(tmp_path, monkeypatch):
     assert "--id" in r2 and "30" in r2                      # round 2: identity 30
 
 
+def test_sensitivity_flag_from_config(tmp_path):
+    # default is ultra-sensitive (matches NCBI BLASTP), applied to both rounds
+    assert diamond._sensitivity_flag(Config(root=tmp_path)) == "--ultra-sensitive"
+    assert diamond._sensitivity_flag(
+        Config(root=tmp_path, DIAMOND_SENSITIVITY="very-sensitive")) == "--very-sensitive"
+    # a value written with leading dashes is tolerated
+    assert diamond._sensitivity_flag(
+        Config(root=tmp_path, DIAMOND_SENSITIVITY="--sensitive")) == "--sensitive"
+    # fast / empty means DIAMOND's default mode: no flag
+    assert diamond._sensitivity_flag(Config(root=tmp_path, DIAMOND_SENSITIVITY="fast")) is None
+    assert diamond._sensitivity_flag(Config(root=tmp_path, DIAMOND_SENSITIVITY="")) is None
+
+
 def test_best_per_member_keeps_highest_bitscore(tmp_path):
     r2 = tmp_path / "r2.tsv"
     r2.write_text(R2)

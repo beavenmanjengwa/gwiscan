@@ -1,18 +1,18 @@
 # =================================================================================#
-# GWIscan family table — SUPERFAMILY mode (families grouped under a superfamily)   #
+# GWIscan family table — MULTI-FAMILY mode (families grouped under a multi-family)   #
 # =================================================================================#
-# Copy this file to  config/superfamily.tsv  and edit it for your study families,
-# and set  MODE: superfamily  in config.yaml.
+# Copy this file to  config/multi-family.tsv  and edit it for your study families,
+# and set  MODE: multi-family  in config.yaml.
 #
-# Superfamily mode adds a superfamily rollup on top of the per-family results
+# Multi-family mode adds a multi-family rollup on top of the per-family results
 # (e.g. Lectin over GNA, Legume, CRA). Every processing step matches family mode;
-# the leading Superfamily column drives the rollup.
+# the leading Multifamily column drives the rollup.
 #
 # One row per family. TAB-separated. Whole-line '#' comments and blank lines are
 # ignored (put each comment on its own line beginning with '#').
 #
-# COLUMNS  (family-mode columns, with a leading Superfamily column)
-#   Superfamily The grouping label this family rolls up into. Required in this
+# COLUMNS  (family-mode columns, with a leading Multifamily column)
+#   Multifamily The grouping label this family rolls up into. Required in this
 #               mode; families sharing a value are reported together.
 #
 #   Family      Study family name. Used verbatim in outputs and domain ids
@@ -35,7 +35,7 @@
 # Rule: InterProScan runs ONLY for families whose PfamModel is a Pfam accession.
 
 # ----------------------------------------------------------------------------
-Superfamily	Family	PfamModel	BlastModel
+Multifamily	Family	PfamModel	BlastModel
 # specific Pfam -> hmmscan + DIAMOND, InterProScan-confirmed:
 Lectin	GNA	PF01453	AAA33346.1.fasta
 Lectin	Legume	PF00139	AAA33983.1.fasta

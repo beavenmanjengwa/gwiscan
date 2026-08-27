@@ -1,13 +1,12 @@
-# GWIscan (Genome-Wide Identification Scan)
+# GWIscan (Genome-Wide Identification scan)
 
 GWIscan is a pipeline for the genome-wide identification and annotation of gene
-families and superfamilies which combines BLAST, profile hidden Markov models, and
-InterProScan. It runs in family, superfamily, or architecture modes, on a single
-proteome or across multiple species. It provides detailed annotation features
-including gene coordinates, domain architecture, physicochemical properties,
-signal-peptide and transmembrane topology, subcellular localization, and GO terms.
-It can also perform multiple sequence alignment, MEME motif discovery, and
-phylogenetic tree generation.
+families. It combines BLAST, profile hidden Markov models, and InterProScan for
+identification. It runs in family, multi-family, or architecture modes, on a single
+proteome or across multiple species. It provides annotation including gene
+coordinates, domain architecture, physicochemical properties, signal-peptide and
+transmembrane topology, subcellular localization, and GO terms. It can also perform
+multiple sequence alignment, MEME motif discovery, and phylogenetic tree construction.
 
 ## Installation
 
@@ -53,7 +52,7 @@ Run `gwiscan` from a project folder, or point at one with `-C /path`:
 project/
 ├── config.yaml                 # settings (THREADS, MODE, EBI_EMAIL, ...)
 ├── config/
-│   ├── family.tsv              # family table (or superfamily.tsv for MODE: superfamily)
+│   ├── family.tsv              # family table (or multi-family.tsv for MODE: multi-family)
 │   └── species.tsv             # species list (multi-species only)
 ├── input/proteome.fasta        # the proteome to scan (single species)
 ├── db/
@@ -69,7 +68,7 @@ More detail is in `docs/project-layout.txt`.
 ## The family table
 
 Copy `config/family.tsv.example` to `config/family.tsv` and edit it (or
-`superfamily.tsv` for `MODE: superfamily`, which adds a `Superfamily` column).
+`multi-family.tsv` for `MODE: multi-family`, which adds a `Multifamily` column).
 The columns are:
 
 | Column | Meaning |
@@ -85,7 +84,7 @@ CRA       CRA.hmm     ABL98074.1.fasta
 EUL       -           ABW73993.1.fasta
 ```
 
-## Architecture mode (domain combinations)
+## Architecture mode
 
 This mode identifies genes that encode proteins with a given domain architecture: a
 **primary** domain that defines and

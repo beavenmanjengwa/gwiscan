@@ -166,7 +166,7 @@ def _species_config(cfg: Config, prefix: str, proteome: str, annotation: str = "
 def _configured_families(cfg: Config) -> list:
     """Every family the study defines, so the cross-species matrix has a row for each
     even when a species has zero of it. Architecture names in MODE: architecture,
-    else the family/superfamily table's families."""
+    else the family/multi-family table's families."""
     try:
         if cfg.is_architecture:
             from . import architecture
@@ -184,7 +184,7 @@ def write_combined_summary(cfg: Config, prefixes: list) -> None:
       * all_species_summary.tsv  -- families (rows) x species (columns) matrix of the
         member protein count, with per-family and per-species Totals; every configured
         family has a row even at zero.
-      * all_species_summary.xlsx -- that matrix, a Superfamily matrix (superfamily mode),
+      * all_species_summary.xlsx -- that matrix, a Multifamily matrix (multi-family mode),
         and every species' members stacked into one Members sheet (a Species column added).
       * all_species_members.tsv  -- the stacked members as TSV.
     Species without a results file (never ran / failed early) are skipped.
@@ -235,8 +235,8 @@ def write_combined_summary(cfg: Config, prefixes: list) -> None:
 
     with pd.ExcelWriter(out_xlsx, engine="openpyxl") as writer:
         fam_matrix.to_excel(writer, sheet_name="Family_matrix", index=False)
-        if "superfamily" in combined.columns:
-            _matrix("superfamily").to_excel(writer, sheet_name="Superfamily_matrix", index=False)
+        if "multifamily" in combined.columns:
+            _matrix("multifamily").to_excel(writer, sheet_name="Multifamily_matrix", index=False)
         combined.rename(columns=io.to_camel).to_excel(writer, sheet_name="Members", index=False)
 
     external.log(

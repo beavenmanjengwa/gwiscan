@@ -4,8 +4,8 @@
 #                                                                                                     #
 # diamond.py - Two-round DIAMOND BLASTp, run for every family (the `search-diamond` stage).           #
 #                                                                                                     #
-# Round 1: the family's foreign model vs the proteome, --very-sensitive, E-value only (no             #
-# identity/coverage clamp), so divergent members are not clipped. Round-2 SEEDS are chosen as:        #
+# Round 1: the family's foreign model vs the proteome, DIAMOND_SENSITIVITY, E-value and coverage.      #
+#   * Maximaize sensitivity to pick distant candidates candidates. Round-2 SEEDS are chosen as:       #
 #   * HMM-validated  — round-1 subjects that ALSO pass the family hmmscan (two independent methods    #
 #                      agreeing = confident members, no false-positive seeds to amplify); used        #
 #                      whenever the family has an HMM.                                                #
@@ -36,10 +36,21 @@ DIAMOND_FIELDS = [
 _COL = {name: i for i, name in enumerate(DIAMOND_FIELDS)}
 
 
+def _sensitivity_flag(cfg) -> str | None:
+    """The DIAMOND sensitivity mode flag (e.g. ``--ultra-sensitive``) from
+    DIAMOND_SENSITIVITY, applied to both rounds. Returns None for ``fast``/default
+    (DIAMOND's fast mode takes no flag). ``ultra-sensitive`` (the default) matches
+    NCBI BLASTP sensitivity."""
+    mode = str(cfg.DIAMOND_SENSITIVITY or "").strip().lstrip("-")
+    if not mode or mode in ("fast", "default", "none"):
+        return None
+    return f"--{mode}"
+
+
 def _round(cfg, query, db, out_path, sensitivity=None, identity=None, coverage=None) -> int:
     """One DIAMOND blastp round. Always filtered by E-value; identity and
     query-coverage are added only when given. ``sensitivity`` is a DIAMOND mode
-    flag (e.g. ``--very-sensitive``) or None."""
+    flag (e.g. ``--ultra-sensitive``) or None."""
     external.require("diamond")
     cmd = [
         "diamond", "blastp",
@@ -150,11 +161,11 @@ def _process_family(cfg, family, blast_model, proteome_db, tmp_dir, writer, hmm_
     if not model_fasta.exists():
         raise FileNotFoundError(f"model FASTA not found for {family}: {model_fasta}")
 
-    # Round 1: foreign model vs proteome, --very-sensitive, E-value only.
+    # Round 1: foreign model vs proteome, DIAMOND_SENSITIVITY, E-value only.
     external.log(f"[{datetime.now()}] [{family}] Round 1: model vs proteome "
-                 f"(--very-sensitive, E<={cfg.DIAMOND_EVALUE})...")
+                 f"({cfg.DIAMOND_SENSITIVITY}, E<={cfg.DIAMOND_EVALUE})...")
     r1_out = cfg.result(f"diamond_{family}_r1.tsv")
-    r1_count = _round(cfg, model_fasta, proteome_db, r1_out, sensitivity="--very-sensitive")
+    r1_count = _round(cfg, model_fasta, proteome_db, r1_out, sensitivity=_sensitivity_flag(cfg))
     external.log(f"[OK] {family} Round 1: {r1_count} hits")
     if r1_count == 0:
         external.log(f"[WARN] {family}: no Round 1 hits, skipping Round 2.")
@@ -181,13 +192,12 @@ def _process_family(cfg, family, blast_model, proteome_db, tmp_dir, writer, hmm_
 
     # Round 2: native seeds vs proteome (identity + stricter coverage).
     external.log(f"[{datetime.now()}] [{family}] Round 2: seeds vs proteome "
-                 f"(id {cfg.DIAMOND_IDENTITY}%, cover {cfg.DIAMOND_COVERAGE_R2}%, "
-                 f"sensitive={cfg.DIAMOND_SENSITIVE_R2})...")
+                 f"({cfg.DIAMOND_SENSITIVITY}, id {cfg.DIAMOND_IDENTITY}%, "
+                 f"cover {cfg.DIAMOND_COVERAGE_R2}%)...")
     r2_out = cfg.result(f"diamond_{family}_r2.tsv")
     _round(cfg, seed_fasta, proteome_db, r2_out,
-           sensitivity=("--sensitive" if cfg.DIAMOND_SENSITIVE_R2 else None),
+           sensitivity=_sensitivity_flag(cfg),
            identity=cfg.DIAMOND_IDENTITY, coverage=cfg.DIAMOND_COVERAGE_R2)
-
     # Only the member IDs (+ coords) are needed for blast_hits.tsv; merge extracts
     # the sequences from the proteome downstream, so no FASTA is written here.
     best = _best_per_member(r2_out)
@@ -227,7 +237,8 @@ def run(cfg: Config) -> None:
         external.log(f"[{datetime.now()}] Two-round DIAMOND BLASTp (model -> proteome, seeds -> proteome)...")
         external.log(
             f"[{datetime.now()}] E-value: {cfg.DIAMOND_EVALUE} | "
-            f"Round 1: --very-sensitive (E-value only) | "
+            f"Sensitivity: {cfg.DIAMOND_SENSITIVITY} (both rounds) | "
+            f"Round 1: E-value only | "
             f"Seeds: HMM-validated, else BSR>={cfg.DIAMOND_BSR} | "
             f"Round 2: id {cfg.DIAMOND_IDENTITY}%, cover {cfg.DIAMOND_COVERAGE_R2}%"
         )

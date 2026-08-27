@@ -47,8 +47,8 @@ out_stats    <- file.path(inter_dir, "protparam_stats.csv")
 out_outliers <- file.path(inter_dir, "protparam_outliers.csv")
 
 # -- Settings -----------------------------------------------------------------
-# Grouping column: "family" for families, "superfamily" for the superfamily
-# rollup (present only when GWIscan was run in superfamily mode).
+# Grouping column: "family" for families, "multifamily" for the multi-family
+# rollup (present only when GWIscan was run in multi-family mode).
 FAMILY_COL <- "family"
 
 # A family enters the figure and the table once it reaches this many members.

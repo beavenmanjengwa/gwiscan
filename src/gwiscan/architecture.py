@@ -4,7 +4,7 @@
 #                                                                                                  #
 # architecture.py - Domain-COMBINATION identification (MODE: architecture).                         #
 #                                                                                                  #
-# The family/superfamily modes call a protein per domain hit. Architecture mode classifies a       #
+# The family/multi-family modes call a protein per domain hit. Architecture mode classifies a       #
 # protein by a COMBINATION of Pfam domains on one chain: a PRIMARY domain that defines and seeds    #
 # the family, plus one or more REQUIRED domains that must also be present. Both are Pfam HMMs.       #
 #                                                                                                  #
@@ -219,7 +219,7 @@ def preflight(cfg: Config) -> None:
             fail = True
 
     # Proteome(s): multi-species runs validate every manifest species; single-species
-    # validates input/proteome.fasta. Shared with the family/superfamily pre-flight.
+    # validates input/proteome.fasta. Shared with the family/multi-family pre-flight.
     from . import preflight
     fail = preflight._check_proteomes(cfg) or fail
 

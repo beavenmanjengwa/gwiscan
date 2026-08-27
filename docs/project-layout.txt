@@ -14,7 +14,7 @@ DIRECTORY TREE
     config.yaml                 run settings: MODE, THREADS, EBI_EMAIL, OUTPUT, ...
     config/
       family.tsv                family table            (MODE: family)
-      superfamily.tsv           family table + rollup   (MODE: superfamily)
+      multi-family.tsv          family table + rollup   (MODE: multi-family)
       architecture.tsv          domain-combination rules(MODE: architecture)
       species.tsv               species manifest        (multi-species runs only)
     input/
@@ -40,7 +40,7 @@ KEY FILES
   config/*.tsv        The config table follows MODE — provide the one that matches
                       and keep MODE in config.yaml in agreement:
                         family.tsv        MODE: family        (flat list of families)
-                        superfamily.tsv   MODE: superfamily   (adds a Superfamily column)
+                        multi-family.tsv  MODE: multi-family  (adds a Multifamily column)
                         architecture.tsv  MODE: architecture  (domain-combination rules)
                       Copy the matching *.tsv.example and edit.
 

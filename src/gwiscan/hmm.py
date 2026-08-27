@@ -108,7 +108,7 @@ def parse_domtbl(cfg: Config, domtbl=None) -> int:
     if not domtbl.exists():
         raise FileNotFoundError(f"domtblout not found: {domtbl} (run hmmscan first)")
 
-    # Family/superfamily modes map each Pfam to its curated family. Architecture
+    # Family/multi-family modes map each Pfam to its curated family. Architecture
     # mode has no per-domain family — the label IS the HMM's own domain name (e.g.
     # B_lectin, Pkinase), so the map is empty and every hit uses that name (the
     # fallback below). architecture.run then combines the domains per protein.

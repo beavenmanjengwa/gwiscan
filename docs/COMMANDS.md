@@ -60,8 +60,8 @@ gwiscan --version
 ## Full runs
 
 ```bash
-# superfamily level
-gwiscan run -C /path/to/ProjectDir --mode superfamily -p 8
+# multi-family level
+gwiscan run -C /path/to/ProjectDir --mode multi-family -p 8
 
 # architecture mode
 gwiscan run -C /path/to/ProjectDir --mode architecture -p 8
@@ -144,7 +144,7 @@ live list with `gwiscan run --list-stages`.
 -o, --output DIR        where results/logs go
 --config FILE           path to config.yaml
 -p, --threads N         threads (default 4)
---mode MODE             family | superfamily | architecture
+--mode MODE             family | multi-family | architecture
 --from-stage NAME       resume from this stage
 --until NAME            stop after this stage
 --skip NAMES            skip stage(s), comma-separated

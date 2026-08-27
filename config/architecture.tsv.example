@@ -1,5 +1,5 @@
 # ==================================================================================#
-# GWIscan architecture table — ARCHITECTURE mode (domain combinations)              #
+# GWIscan architecture table — ARCHITECTURE mode                                    #
 # ==================================================================================#
 # Copy this file to  config/architecture.tsv  and edit it for your study, and set
 #   MODE: architecture   in config.yaml.

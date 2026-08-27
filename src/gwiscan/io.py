@@ -46,8 +46,8 @@ def to_snake(name: str) -> str:
 
 
 def read_family_map(path: Path | str) -> list[dict[str, str]]:
-    """Return the family table (config/family.tsv, or config/superfamily.tsv in
-    superfamily mode) as a list of row dicts (not casing-converted).
+    """Return the family table (config/family.tsv, or config/multi-family.tsv in
+    multi-family mode) as a list of row dicts (not casing-converted).
 
     Blank lines and lines starting with '#' are ignored, so the family table can
     carry header comments documenting its columns.
@@ -82,7 +82,7 @@ def family_records(path: Path | str) -> list[dict[str, Any]]:
       * **empty** (``-``) — no HMM at all; the family is DIAMOND-only (EUL).
 
     Each record has:
-      * ``family`` / ``superfamily`` — names (superfamily present only in that mode).
+      * ``family`` / ``multifamily`` — names (multifamily present only in that mode).
       * ``pfam_model``   — bare Pfam accession, or '' (custom HMM and DIAMOND-only
                            families have no confirm/coordinate Pfam).
       * ``hmm_file``     — filename pressed into the HMM db (``<acc>.hmm`` for an
@@ -111,7 +111,7 @@ def family_records(path: Path | str) -> list[dict[str, Any]]:
 
         out.append({
             "family": family,
-            "superfamily": _clean(row.get("Superfamily")) or None,
+            "multifamily": _clean(row.get("Multifamily")) or None,
             "pfam_model": pfam,
             "hmm_file": hmm_file,
             "hmm_is_custom": is_custom,
@@ -141,12 +141,12 @@ def custom_hmm_families(path: Path | str) -> set[str]:
     return {str(r["family"]) for r in family_records(path) if r["hmm_is_custom"]}
 
 
-def family_to_superfamily(path: Path | str) -> dict[str, str | None]:
-    """family -> superfamily, for families that declare one (superfamily mode)."""
+def family_to_multifamily(path: Path | str) -> dict[str, str | None]:
+    """family -> multifamily, for families that declare one (multi-family mode)."""
     return {
-        str(r["family"]): r["superfamily"]
-        for r in family_records(path) 
-        if r["superfamily"]
+        str(r["family"]): r["multifamily"]
+        for r in family_records(path)
+        if r["multifamily"]
     }
 
 

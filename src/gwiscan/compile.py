@@ -6,7 +6,7 @@
 #                                                                                                  #
 # Base table is the merged candidate hits (one row per domain hit); protein-level annotations      #
 # (protparam, targetp, deeptmhmm, deeploc) are left-joined on protein_id, and InterProScan is      #
-# summarised per protein before joining. Superfamily mode adds a superfamily column + rollup.      #
+# summarised per protein before joining. Multi-family mode adds a multifamily column + rollup.     #
 #                                                                                                  #
 ####################################################################################################
 """
@@ -27,7 +27,7 @@ from .config import Config
 # a two-row header would break every parser (incl. our own io.read_tsv), so the
 # grouping lives only in the human-facing spreadsheet.
 COLUMN_BANDS = [
-    ("Identity", ["protein_id", "family", "superfamily"]),
+    ("Identity", ["protein_id", "family", "multifamily"]),
     ("Chromosomal Localization", ["gene_id", "chrom", "gene_start", "gene_end", "strand"]),
     ("Gene structure", ["intron_count"]),
     ("Domain architecture", ["domain_architecture", "family_domain_count", "architecture_type"]),
@@ -212,18 +212,18 @@ def run(cfg: Config) -> None:
     df["protein_id"] = df["protein_id"].astype(str)
     external.log(f"[OK] Base candidates: {len(df)} domain hits, {df['protein_id'].nunique()} proteins")
 
-    # Superfamily mode: map each family to its superfamily for grouping/rollup.
+    # Multi-family mode: map each family to its multifamily for grouping/rollup.
     # Grouping only — no processing differs between modes.
-    superfamily_mode = str(cfg.MODE).lower() == "superfamily"
-    if superfamily_mode:
-        fam2super = io.family_to_superfamily(cfg.family_map)
-        if not fam2super:
-            external.log("[WARN] MODE=superfamily but the family table has no "
-                         "Superfamily column/values; skipping the superfamily rollup.")
-            superfamily_mode = False
+    multifamily_mode = str(cfg.MODE).lower() == "multi-family"
+    if multifamily_mode:
+        fam2multi = io.family_to_multifamily(cfg.family_map)
+        if not fam2multi:
+            external.log("[WARN] MODE=multi-family but the family table has no "
+                         "Multifamily column/values; skipping the multi-family rollup.")
+            multifamily_mode = False
         else:
-            df.insert(df.columns.get_loc("family") + 1, "superfamily",
-                      df["family"].map(fam2super).fillna("-"))
+            df.insert(df.columns.get_loc("family") + 1, "multifamily",
+                      df["family"].map(fam2multi).fillna("-"))
 
     # Chromosomal coordinates identify the locus, so they join the identity block
     # ahead of the domain hit. Absent when no annotation was supplied.
@@ -365,14 +365,14 @@ def run(cfg: Config) -> None:
         ).reset_index()
         summary.rename(columns=io.to_camel).to_excel(writer, sheet_name="Family_summary", index=False)
 
-        # Superfamily rollup (superfamily mode only): families/proteins per superfamily.
-        if superfamily_mode:
-            super_summary = df.groupby("superfamily").agg(
+        # Multi-family rollup (multi-family mode only): families/proteins per multifamily.
+        if multifamily_mode:
+            multi_summary = df.groupby("multifamily").agg(
                 n_families=("family", "nunique"),
                 n_proteins=("protein_id", "nunique"),
             ).reset_index()
-            super_summary.rename(columns=io.to_camel).to_excel(
-                writer, sheet_name="Superfamily_summary", index=False)
+            multi_summary.rename(columns=io.to_camel).to_excel(
+                writer, sheet_name="Multifamily_summary", index=False)
 
         if dl is not None:
             loc_df = df[["protein_id", "family"]].drop_duplicates().merge(

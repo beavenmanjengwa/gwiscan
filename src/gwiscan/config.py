@@ -93,8 +93,8 @@ DEFAULTS = {
     "OUTPUT": "",
     # Reporting mode:
     #   "family"       — flat families (one identifying model per family).
-    #   "superfamily"  — families grouped under a Superfamily column (superfamily.tsv);
-    #                    adds a superfamily rollup. e.g. Lectin over GNA, Legume, CRA...
+    #   "multi-family" — families grouped under a Multifamily column (multi-family.tsv);
+    #                    adds a multi-family rollup. e.g. Lectin over GNA, Legume, CRA...
     #   "architecture" — domain-COMBINATION mode. A protein is classified by the SET
     #                    of Pfam domains it carries (e.g. LecRLK = a lectin domain AND
     #                    a kinase domain on the same chain). hmmscan only — the
@@ -104,7 +104,10 @@ DEFAULTS = {
     "DIAMOND_EVALUE": "1e-5",
     "DIAMOND_IDENTITY": 30,        # round 2 min % identity (native seeds; round 1 is E-value only)
     "DIAMOND_COVERAGE_R2": 70,     # round 2 query coverage % (native seeds)
-    "DIAMOND_SENSITIVE_R2": False, # round 2 --sensitive; default off (native-to-native)
+    # DIAMOND sensitivity mode for both search rounds. One of fast, mid-sensitive,
+    # sensitive, more-sensitive, very-sensitive, ultra-sensitive. ultra-sensitive
+    # (default) matches NCBI BLASTP sensitivity; "fast" runs DIAMOND's default mode.
+    "DIAMOND_SENSITIVITY": "ultra-sensitive",
     # Round-2 seeds: HMM-validated (round-1 hits that also pass hmmscan) when a
     # family has an HMM; otherwise Blast Score Ratio -- keep round-1 subjects whose
     # bitscore / model self-bitscore >= this (length-normalized, Rasko et al. 2005).
@@ -247,7 +250,6 @@ _CASTERS = {
     "VERBOSE": _to_bool,
     "DIAMOND_IDENTITY": int,
     "DIAMOND_COVERAGE_R2": int,
-    "DIAMOND_SENSITIVE_R2": _to_bool,
     "DIAMOND_BSR": float,
     "CONCORDANCE_MIN": float,
     "PRIMARY_TRANSCRIPT": _to_bool,
@@ -283,7 +285,7 @@ class Config:
     DIAMOND_EVALUE: str = "1e-5"
     DIAMOND_IDENTITY: int = 30
     DIAMOND_COVERAGE_R2: int = 70
-    DIAMOND_SENSITIVE_R2: bool = False
+    DIAMOND_SENSITIVITY: str = "ultra-sensitive"
     DIAMOND_BSR: float = 0.4
     CONCORDANCE_MIN: float = 0.7
     ANNOTATION: str = ""
@@ -373,9 +375,9 @@ class Config:
 
     @property
     def family_map(self) -> Path:
-        """The family table: config/superfamily.tsv in superfamily mode, else
+        """The family table: config/multi-family.tsv in multi-family mode, else
         config/family.tsv. The filename matches MODE."""
-        name = "superfamily.tsv" if str(self.MODE).lower() == "superfamily" else "family.tsv"
+        name = "multi-family.tsv" if str(self.MODE).lower() == "multi-family" else "family.tsv"
         return self.config_dir / name
 
     @property

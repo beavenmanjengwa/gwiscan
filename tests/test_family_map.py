@@ -63,22 +63,22 @@ def test_family_pfam_map_inverse(tmp_path):
     assert "EUL" not in m
 
 
-SUPER_MAP = (
-    "Superfamily\tFamily\tPfamModel\tBlastModel\n"
+MULTI_MAP = (
+    "Multifamily\tFamily\tPfamModel\tBlastModel\n"
     "Lectin\tGNA\tPF01453\tgna.fasta\n"
     "Lectin\tLegume\tPF00139\tleg.fasta\n"
     "Lectin\tCRA\tPF00704\tcra.fasta\n"
 )
 
 
-def test_family_to_superfamily(tmp_path):
-    m = io.family_to_superfamily(_write(tmp_path, SUPER_MAP))
+def test_family_to_multifamily(tmp_path):
+    m = io.family_to_multifamily(_write(tmp_path, MULTI_MAP))
     assert m == {"GNA": "Lectin", "Legume": "Lectin", "CRA": "Lectin"}
 
 
-def test_family_mode_has_no_superfamily(tmp_path):
-    # Flat family_map (no Superfamily column) -> empty mapping (family mode).
-    assert io.family_to_superfamily(_write(tmp_path, SYNThetic)) == {}
+def test_family_mode_has_no_multifamily(tmp_path):
+    # Flat family_map (no Multifamily column) -> empty mapping (family mode).
+    assert io.family_to_multifamily(_write(tmp_path, SYNThetic)) == {}
 
 
 CUSTOM_MAP = (
