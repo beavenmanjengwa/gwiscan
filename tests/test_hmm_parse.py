@@ -2,10 +2,10 @@
 """
 ####################################################################################################
 #                                                                                                  #
-# test_hmm_parse.py - hmmscan --domtblout parsing tests.                                           #
+# test_hmm_parse.py - hmmsearch --domtblout parsing tests.                                          #
 #                                                                                                  #
-# Pins the column orientation: in hmmscan output the target is the HMM model and the query is the  #
-# protein. Keeping these mapped correctly keeps protein_id and family straight and the candidate   #
+# Pins the column orientation: in hmmsearch output the target is the protein and the query is the   #
+# HMM model. Keeping these mapped correctly keeps protein_id and family straight and the candidate  #
 # set populated downstream.                                                                        #
 #                                                                                                  #
 ####################################################################################################
@@ -21,15 +21,16 @@ FAMILY_MAP = (
     "GNA\tPF01453\tAAA33346.1.fasta\n"
 )
 
-# Two realistic domtbl data lines (23 fields) plus comment lines that must be
-# ignored. Field order: tname tacc tlen qname qacc qlen  Eval score bias # of
+# Two realistic hmmsearch domtbl data lines (23 fields) plus comment lines that must
+# be ignored. Field order: tname tacc tlen qname qacc qlen  Eval score bias # of
 # cEval iEval domSc bias hmmF hmmT aliF aliT envF envT acc desc...
+# hmmsearch: tname is the PROTEIN, qname/qacc are the HMM name/accession.
 DOMTBL = (
     "# target name accession tlen query name ...\n"
     "#------------------- ---------- ----- \n"
-    "Lectin_legB PF00139.27 250 sp|P12345|LEC_SOYBN - 285 1.2e-80 270.5 0.1 1 1 "
+    "sp|P12345|LEC_SOYBN - 285 Lectin_legB PF00139.27 250 1.2e-80 270.5 0.1 1 1 "
     "3.4e-84 6.8e-80 268.9 0.1 1 249 34 280 33 282 0.98 Legume lectin domain\n"
-    "B_lectin PF01453.31 105 GNA_prot_007 - 160 2.1e-40 130.2 0.0 1 1 "
+    "GNA_prot_007 - 160 B_lectin PF01453.31 105 2.1e-40 130.2 0.0 1 1 "
     "5.0e-44 9.9e-40 128.0 0.0 1 104 12 118 10 120 0.97 D-mannose binding lectin\n"
 )
 
@@ -61,7 +62,7 @@ def test_protein_and_family_not_swapped(tmp_path):
     hmm.parse_domtbl(cfg)
     by_protein = {r["protein_id"]: r for r in _read_hits(cfg)}
 
-    # The query column is the protein id, not the HMM name.
+    # The target column is the protein id, not the HMM name.
     assert "sp|P12345|LEC_SOYBN" in by_protein
     assert "GNA_prot_007" in by_protein
     assert "Lectin_legB" not in by_protein  # that's the HMM name, must not be an id
@@ -71,7 +72,7 @@ def test_protein_and_family_not_swapped(tmp_path):
     assert row["accession"] == "PF00139.27"
     assert row["evalue"] == "6.8e-80"  # i-Evalue, not the full-seq E-value
     assert row["bitscore"] == "268.9"
-    assert row["start"] == "34"           # ali coords on the query
+    assert row["start"] == "34"           # ali coords on the protein (target)
     assert row["end"] == "280"
     assert row["method"] == "hmm"
 
@@ -81,7 +82,7 @@ def test_unmapped_accession_falls_back_to_hmm_name(tmp_path):
     # A hit whose accession is absent from family_map should keep the raw name
     # rather than being dropped.
     extra = DOMTBL + (
-        "Mystery_dom PF99999.1 90 orphan_prot - 100 1e-10 40.0 0.0 1 1 "
+        "orphan_prot - 100 Mystery_dom PF99999.1 90 1e-10 40.0 0.0 1 1 "
         "1e-12 1e-10 38.0 0.0 1 89 5 88 3 90 0.9 unknown\n"
     )
     cfg.result("hmm_domtbl.txt").write_text(extra)
@@ -92,7 +93,7 @@ def test_unmapped_accession_falls_back_to_hmm_name(tmp_path):
 
 # --- GA (gathering) threshold detection for custom identifying HMMs -----------
 #
-# hmmscan --cut_ga applies each model's own GA cutoff and aborts the whole search
+# hmmsearch --cut_ga applies each model's own GA cutoff and aborts the whole search
 # if any pressed model lacks one. A profile from hmmbuild has no GA line unless its
 # source alignment carried one, so a user's custom identifying HMM must be checked
 # before it is pressed. has_ga_thresholds() is what preflight and setup-db use.
@@ -127,7 +128,7 @@ def test_has_ga_thresholds_false_when_absent(tmp_path):
 
 
 def test_has_ga_thresholds_requires_every_model(tmp_path):
-    # Two concatenated models, only the first declaring GA: hmmscan --cut_ga would
+    # Two concatenated models, only the first declaring GA: hmmsearch --cut_ga would
     # still abort, so this must read as missing.
     p = tmp_path / "two.hmm"
     p.write_text(_HMM_WITH_GA + _HMM_NO_GA)

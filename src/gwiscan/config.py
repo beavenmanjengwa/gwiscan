@@ -406,8 +406,8 @@ class Config:
 
     @property
     def primary_hmm_db(self) -> Path:
-        """Architecture mode: the pressed db of just the PRIMARY domain HMM(s), used
-        for the genome-wide seed pass. hmm_db holds primary+required for pass 2."""
+        """Architecture mode: the db of just the PRIMARY domain HMM(s), used for the
+        genome-wide seed pass. hmm_db holds primary+required for pass 2."""
         return self.hmm_dir / "primary_models.hmm"
 
     @property

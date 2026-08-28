@@ -4,7 +4,7 @@
 #                                                                                                  #
 # test_architecture.py - MODE: architecture domain-combination identification tests.               #
 #                                                                                                  #
-# Both the primary and the required domains are Pfam HMMs. The search is a two-pass hmmscan        #
+# Both the primary and the required domains are Pfam HMMs. The search is a two-pass hmmsearch      #
 # (primary genome-wide, then required on the candidates); these tests pin the rules grammar, the   #
 # pressed-database accession sets, and the classify step that keeps a protein only when it carries #
 # the primary and every required domain.                                                           #

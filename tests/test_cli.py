@@ -122,3 +122,20 @@ def test_annotation_flag_flows_into_config(tmp_path):
     cfg = cli._config_from_args(args)
     assert cfg.ANNOTATION == "/data/ann.gff3"
     assert str(cfg.annotation) == "/data/ann.gff3"
+
+
+def test_stage_subcommand_shows_only_its_own_tool_flags():
+    # A stage's --help must not be flooded with unrelated tool flags: protparam
+    # carries its own option but not DIAMOND / IQ-TREE / InterProScan ones.
+    parser = cli.build_parser()
+    args = parser.parse_args(["protparam"])
+    assert hasattr(args, "PROTPARAM_FORMATS")          # its own
+    for unrelated in ("DIAMOND_SENSITIVITY", "IQTREE_SEED", "EBI_EMAIL", "CLIPKIT_MODE"):
+        assert not hasattr(args, unrelated)
+    # common project options are still present on every stage
+    for common in ("OUTPUT", "THREADS", "VERBOSE", "MODE"):
+        assert hasattr(args, common)
+    # run drives the whole pipeline, so it carries every group
+    run_args = parser.parse_args(["run"])
+    for every in ("DIAMOND_SENSITIVITY", "IQTREE_SEED", "EBI_EMAIL", "PROTPARAM_FORMATS"):
+        assert hasattr(run_args, every)

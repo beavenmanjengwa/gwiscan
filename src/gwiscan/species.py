@@ -4,7 +4,7 @@
 #                                                                                                  #
 # species.py - Multi-species driver: run each proteome as an independent parallel job.             #
 #                                                                                                  #
-# Reads config/species.tsv (Prefix, Proteome), presses the shared databases once, then schedules   #
+# Reads config/species.tsv (Prefix, Proteome), builds the shared databases once, then schedules   #
 # each pipeline stage across species. Each species writes into intermediate/<Prefix>/ and is fully #
 # isolated; one species failing does not abort the others.                                         #
 #                                                                                                  #
@@ -355,7 +355,7 @@ def run(cfg: Config) -> None:
     if not species:
         return   # --retry-failed with nothing to retry; already logged
 
-    # Shared, once: press the HMM db + verify BLAST model FASTAs (read-only refs).
+    # Shared, once: build the HMM db + verify BLAST model FASTAs (read-only refs).
     external.log("[multi] Building shared databases (HMM + model FASTAs)...")
     setupdb.setup_shared(cfg)
 

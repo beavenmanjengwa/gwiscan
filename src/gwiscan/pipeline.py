@@ -59,7 +59,7 @@ STAGES = [
     ("preflight", "00 Pre-flight checks", lambda cfg: preflight.run(cfg), "00_preflight"),
     ("setup-shared", "00 Setup shared databases", lambda cfg: setupdb.setup_shared(cfg), "00_setup_shared"),
     ("setup-db", "00 Setup proteome db", lambda cfg: setupdb.setup_proteome(cfg), "00_setup_proteome"),
-    ("search-hmm", "01 HMMscan", lambda cfg: hmm.run(cfg), "01_hmmscan"),
+    ("search-hmm", "01 hmmsearch", lambda cfg: hmm.run(cfg), "01_hmmsearch"),
     ("search-diamond", "02 DIAMOND BLASTp", lambda cfg: diamond.run(cfg), "02_diamond"),
     ("merge", "03 Merge candidates", lambda cfg: candidates.run(cfg), "03_merge_candidates"),
     ("score", "04 Family detectability", lambda cfg: score.run(cfg), "04_detectability"),
@@ -85,18 +85,18 @@ STAGES = [
 STAGE_KEYS = [key for key, *_ in STAGES]
 
 # Architecture mode (MODE: architecture) identifies members by a Pfam domain
-# COMBINATION with a two-pass hmmscan (primary seed genome-wide, then required on the
+# COMBINATION with a two-pass hmmsearch (primary seed genome-wide, then required on the
 # candidates), then reuses the ordinary annotation pipeline unchanged: InterProScan
 # annotates the final candidates, followed by ProtParam/TargetP/DeepLoc/coords/compile
 # and the domain/tree stages. Only the DIAMOND-based stages, per-family scoring, the
 # proteome DIAMOND db, and the InterProScan-gate `confirm` drop out (architecture.run
-# already writes the final candidates). setup-shared presses the two HMM databases.
+# already writes the final candidates). setup-shared builds the two HMM databases.
 ARCH_DROP = {"setup-db", "search-diamond", "score", "merge", "confirm"}
 
 
 def stages_for(cfg) -> list:
     """The stage list for this run's MODE. Architecture mode reuses the full pipeline
-    minus the DIAMOND/scoring/confirm stages, with the two-pass hmmscan search
+    minus the DIAMOND/scoring/confirm stages, with the two-pass hmmsearch search
     (architecture.run) in place of search-hmm."""
     if not cfg.is_architecture:
         return STAGES
@@ -105,7 +105,7 @@ def stages_for(cfg) -> list:
         if key in ARCH_DROP:
             continue
         if key == "search-hmm":
-            stages.append(("search-hmm", "01 Two-pass hmmscan (primary + required)",
+            stages.append(("search-hmm", "01 Two-pass hmmsearch (primary + required)",
                            lambda cfg: architecture.run(cfg), "01_architecture_search"))
         else:
             stages.append((key, label, func, logname))
@@ -289,7 +289,7 @@ def skip_notice(key: str, label: str, skip: set, auto_skip: dict, off: set = fro
 def run(cfg: Config, include_shared_setup: bool = True) -> None:
     """Run the full pipeline for one proteome.
 
-    include_shared_setup presses the shared HMM database and validates the BLAST
+    include_shared_setup builds the shared HMM database and validates the BLAST
     model FASTAs. The multi-species driver does that once up front, then drives the
     per-species stages itself -- each species still builds its own proteome db and
     writes into its own intermediate/<SPECIES>/ tree, staying independent.
@@ -304,7 +304,7 @@ def run(cfg: Config, include_shared_setup: bool = True) -> None:
     external.log("=" * 56)
     external.log(f" Threads         : {cfg.THREADS}")
     if cfg.is_architecture:
-        external.log(f" Mode            : architecture (hmmscan-only, domain combinations)")
+        external.log(f" Mode            : architecture (hmmsearch-only, domain combinations)")
     else:
         external.log(f" DIAMOND e-value : {cfg.DIAMOND_EVALUE}")
     external.log(f" Project dir     : {cfg.root}")

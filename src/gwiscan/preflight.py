@@ -21,8 +21,7 @@ from .config import Config
 
 # (binary, version command) for tools that must be present.
 _REQUIRED_BINS = [
-    ("hmmscan", ["hmmscan", "-h"]),
-    ("hmmpress", ["hmmpress", "-h"]),
+    ("hmmsearch", ["hmmsearch", "-h"]),
     ("diamond", ["diamond", "version"]),
     ("seqkit", ["seqkit", "version"]),
     ("mafft", ["mafft", "--version"]),
@@ -66,9 +65,9 @@ def _check_family_reference_files(cfg: Config) -> bool:
                              f"(build it and place it in db/hmm/)")
                 missing = True
             elif r["hmm_press"]:
-                # An identifying custom HMM must carry GA thresholds, or hmmscan
-                # --cut_ga aborts the whole search once it is pressed in. Catch it
-                # here rather than mid-run with HMMER's terse "GA unavailable" error.
+                # An identifying custom HMM must carry GA thresholds, or hmmsearch
+                # --cut_ga aborts the whole search. Catch it here rather than mid-run
+                # with HMMER's terse "GA unavailable" error.
                 ga_error = hmm.custom_hmm_ga_error(custom_hmm, family)
                 if ga_error:
                     external.log(f"[MISSING] {ga_error}")
@@ -248,7 +247,7 @@ def run(cfg: Config) -> None:
     else:
         external.log(f"[OK] family table present: {cfg.family_map.name}")
         # The reference files the family table POINTS AT must exist too, or the run
-        # dies later inside setup-db (after hmmpress has already run) on a missing
+        # dies later inside setup-db (after the HMM db is built) on a missing
         # BlastModel FASTA or custom HMM. Check them here so a typo fails fast.
         fail = _check_family_reference_files(cfg) or fail
 

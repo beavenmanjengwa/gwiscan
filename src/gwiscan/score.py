@@ -10,9 +10,9 @@
 # measurable, so it is reported per family instead of assumed.                                     #
 #                                                                                                  #
 # The two hit sets compared are independent by construction:                                       #
-#   H  - hmmscan hits (profile vs proteome, gathering threshold).                                  #
+#   H  - hmmsearch hits (profile vs proteome, gathering threshold).                                  #
 #   R1 - DIAMOND ROUND 1 subjects (family model vs proteome, --very-sensitive, E-value).           #
-# Round 2 is excluded on purpose: its seeds are hmmscan-validated, so comparing against it would   #
+# Round 2 is excluded on purpose: its seeds are hmmsearch-validated, so comparing against it would   #
 # measure the pipeline's own wiring rather than the family's detectability.                        #
 #                                                                                                  #
 # Writes intermediate/family_detectability.tsv (raw counts and fractions, always) and logs a per-family #
@@ -102,7 +102,7 @@ def verdict(family: str, metrics: dict) -> str:
     detectability = metrics["detectability"]
     if detectability == "hmm_dominant":
         return (f"[VERDICT] {family}: HMM-dominant — DIAMOND round 1 recovered "
-                f"{metrics['blast_recall_of_hmm']:.0%} of the {metrics['n_hmm']} hmmscan hits. "
+                f"{metrics['blast_recall_of_hmm']:.0%} of the {metrics['n_hmm']} hmmsearch hits. "
                 f"A BLAST-only survey of this family would under-report it.")
     if detectability == "blast_dominant":
         return (f"[VERDICT] {family}: BLAST-dominant — {metrics['n_blast'] - metrics['n_both']} "
@@ -119,7 +119,7 @@ def verdict(family: str, metrics: dict) -> str:
 def run(cfg: Config) -> None:
     """Profile every family's detectability and write family_detectability.tsv."""
     cfg.ensure_dirs()
-    external.log("[score] Per-family detectability: hmmscan vs independent DIAMOND round 1")
+    external.log("[score] Per-family detectability: hmmsearch vs independent DIAMOND round 1")
 
     by_family = hmm_hits_by_family(cfg)
     rows, counts = [], {}

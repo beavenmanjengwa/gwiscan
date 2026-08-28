@@ -122,7 +122,7 @@ _HMM_NO_GA = "HMMER3/f [3.4]\nNAME  CRA\nLENG  100\nHMM  A  C\n//\n"
 
 
 def test_custom_hmm_without_ga_thresholds_is_detected(tmp_path, capsys):
-    # An identifying custom HMM lacking GA cutoffs would make hmmscan --cut_ga
+    # An identifying custom HMM lacking GA cutoffs would make hmmsearch --cut_ga
     # abort mid-run; preflight must catch it up front.
     cfg = _project(
         tmp_path,

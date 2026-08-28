@@ -4,7 +4,7 @@
 #                                                                                                  #
 # external.py - Helpers for invoking external bioinformatics binaries.                             #
 #                                                                                                  #
-# Every stage that shells out to a tool (hmmscan, hmmpress, diamond, mafft, targetp, biolib,       #
+# Every stage that shells out to a tool (hmmsearch, diamond, mafft, targetp, biolib,               #
 # deeploc2, weblogo, iqtree) goes through run(), so command logging and failure handling are       #
 # uniform across stages. Stages print to stdout/stderr; the CLI/pipeline layer captures each       #
 # stage's output into logs/<stage>.log.                                                            #

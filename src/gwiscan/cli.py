@@ -48,7 +48,7 @@ from .features import deeploc, deeptmhmm, interpro, protparam, targetp
 COMMANDS = {
     "preflight": ("Check tools, packages and inputs", preflight.run),
     "setup-db": ("Build the HMM + DIAMOND databases", setupdb.run),
-    "search-hmm": ("Run hmmscan and parse hits", hmm.run),
+    "search-hmm": ("Run hmmsearch and parse hits", hmm.run),
     "search-diamond": ("Run two-round DIAMOND BLASTp", diamond.run),
     "merge": ("Merge HMM + DIAMOND candidates", candidates.run),
     "architecture": ("Identify proteins with a given domain architecture", architecture.run),
@@ -129,7 +129,8 @@ _OVERRIDE_KEYS = (
 )
 
 
-def _add_global_opts(p: argparse.ArgumentParser) -> None:
+def _add_common_opts(p: argparse.ArgumentParser) -> None:
+    """Project-wide options shown on every subcommand."""
     p.add_argument("-C", "--workdir", default=None,
                    help="Project directory: inputs/config/db (default: current directory)")
     p.add_argument("-o", "--output", dest="OUTPUT", default=None,
@@ -138,12 +139,21 @@ def _add_global_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("-p", "--threads", dest="THREADS", type=int, default=None,
                    help="Worker threads / CPUs (default 4)")
     p.add_argument("--verbose", dest="VERBOSE", action=argparse.BooleanOptionalAction, default=None,
-                   help="Stream each stage's full output to the terminal. Default: off — "
+                   help="Stream each stage's full output to the terminal. Default: off -- "
                         "only stage start/done is shown; full detail always goes to logs/.")
     p.add_argument("--mode", dest="MODE", default=None,
                    choices=["family", "multi-family", "architecture"],
                    help="Mode: family (flat), multi-family (grouped rollup), or "
-                        "architecture (domain-combination, hmmscan-only)")
+                        "architecture (domain-combination, hmmsearch-only)")
+    p.add_argument("--species", dest="SPECIES", default=None,
+                   help="Run a single species by prefix (namespaces outputs to <prefix>/)")
+    p.add_argument("--proteome", dest="PROTEOME", default=None,
+                   help="Proteome path override (used with --species)")
+    p.add_argument("--species-prefix", dest="SPECIES_PREFIX", default=None,
+                   help="Prefix for systematic domain ids, e.g. Ath -> AthGNA001.1")
+
+
+def _add_diamond_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--evalue", dest="DIAMOND_EVALUE", default=None,
                    help="DIAMOND E-value cutoff")
     p.add_argument("--identity", dest="DIAMOND_IDENTITY", type=int, default=None,
@@ -156,11 +166,20 @@ def _add_global_opts(p: argparse.ArgumentParser) -> None:
                         "(default ultra-sensitive, matches NCBI BLASTP)")
     p.add_argument("--diamond-bsr", dest="DIAMOND_BSR", type=float, default=None,
                    help="Blast Score Ratio seed cutoff for no-HMM families (default 0.4)")
+
+
+def _add_setupdb_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--primary-transcript", dest="PRIMARY_TRANSCRIPT",
                    action=argparse.BooleanOptionalAction, default=None,
                    help="Input is one protein per gene (default true; --no-primary-transcript if it has isoforms)")
+
+
+def _add_coords_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--annotation", dest="ANNOTATION", default=None,
                    help="Genome annotation (GTF/GFF3) for the coords stage; overrides input/annotation.*")
+
+
+def _add_interpro_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--ebi-email", dest="EBI_EMAIL", default=None,
                    help="Email for the EBI InterProScan API")
     p.add_argument("--interpro-appl", dest="INTERPRO_APPL", default=None,
@@ -173,34 +192,54 @@ def _add_global_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--interpro-lookup", dest="INTERPRO_LOOKUP",
                    action=argparse.BooleanOptionalAction, default=None,
                    help="Local mode: use the online precalc lookup (default off = offline)")
+
+
+def _add_targetp_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--targetp-bin", dest="TARGETP_BIN", default=None,
                    help="Path or PATH name of the TargetP 2.0 executable")
     p.add_argument("--targetp-organism", dest="TARGETP_ORGANISM", default=None,
                    help="TargetP organism group (pl = plant)")
+
+
+def _add_deeptmhmm_opts(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--deeptmhmm-version", dest="DEEPTMHMM_VERSION", default=None,
+                   help="Pinned DeepTMHMM biolib version (default 1.0.24, runs locally)")
+
+
+def _add_deeploc_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--deeploc-bin", dest="DEEPLOC_BIN", default=None,
                    help="Path or PATH name of the DeepLoc 2.1 executable")
     p.add_argument("--deeploc-model", dest="DEEPLOC_MODEL", default=None,
                    choices=["Accurate", "Fast"],
                    help="DeepLoc model: Accurate (ProtT5, ~32GB RAM) or Fast (ESM1b)")
-    p.add_argument("--deeptmhmm-version", dest="DEEPTMHMM_VERSION", default=None,
-                   help="Pinned DeepTMHMM biolib version (default 1.0.24, runs locally)")
+
+
+def _add_protparam_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--protparam-formats", dest="PROTPARAM_FORMATS", default=None,
                    type=lambda s: [x.strip() for x in s.split(",") if x.strip()],
                    help="ProtParam output formats, comma-separated: tsv,xlsx,csv (default tsv,xlsx)")
-    p.add_argument("--species-prefix", dest="SPECIES_PREFIX", default=None,
-                   help="Prefix for systematic domain ids, e.g. Ath -> AthGNA001.1")
-    p.add_argument("--meme-nmotifs", dest="MEME_NMOTIFS", type=int, default=None,
-                   help="Number of MEME motifs per family (default 15)")
+
+
+def _add_weblogo_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--weblogo-bin", dest="WEBLOGO_BIN", default=None,
                    help="WebLogo executable: PATH name or absolute path (default weblogo)")
+
+
+def _add_meme_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--meme-bin", dest="MEME_BIN", default=None,
                    help="MEME executable: PATH name or absolute path (default meme)")
+    p.add_argument("--meme-nmotifs", dest="MEME_NMOTIFS", type=int, default=None,
+                   help="Number of MEME motifs per family (default 15)")
+
+
+def _add_trim_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--clipkit-bin", dest="CLIPKIT_BIN", default=None,
                    help="ClipKIT executable: PATH name or absolute path (default clipkit)")
     p.add_argument("--clipkit-mode", dest="CLIPKIT_MODE", default=None,
                    help="ClipKIT trimming mode: smart-gap (default), gappy, kpic, kpic-smart-gap, ...")
-    p.add_argument("--rscript-bin", dest="RSCRIPT_BIN", default=None,
-                   help="Rscript executable for the figures stage (default Rscript)")
+
+
+def _add_iqtree_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--iqtree-bin", dest="IQTREE_BIN", default=None,
                    help="IQ-TREE executable (default iqtree; install: conda install bioconda::iqtree)")
     p.add_argument("--iqtree-model", dest="IQTREE_MODEL", default=None,
@@ -209,12 +248,37 @@ def _add_global_opts(p: argparse.ArgumentParser) -> None:
                    help="IQ-TREE ultrafast bootstrap replicates (default 1000; 0 = off)")
     p.add_argument("--iqtree-seed", dest="IQTREE_SEED", type=int, default=None,
                    help="IQ-TREE RNG seed for reproducible trees (default 12345)")
-    p.add_argument("--species-parallel", dest="SPECIES_PARALLEL", type=int, default=None,
-                   help="Multi-species: concurrent species (0 = auto = cores // threads)")
-    p.add_argument("--species", dest="SPECIES", default=None,
-                   help="Run a single species by prefix (namespaces outputs to <prefix>/)")
-    p.add_argument("--proteome", dest="PROTEOME", default=None,
-                   help="Proteome path override (used with --species)")
+
+
+def _add_figures_opts(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--rscript-bin", dest="RSCRIPT_BIN", default=None,
+                   help="Rscript executable for the figures stage (default Rscript)")
+
+
+# Extra option group(s) each stage's subcommand shows, on top of the common options.
+# A stage not listed here shows only the common options. `run` shows every group.
+STAGE_OPTS = {
+    "setup-db":       [_add_setupdb_opts],
+    "search-diamond": [_add_diamond_opts],
+    "interpro":       [_add_interpro_opts],
+    "protparam":      [_add_protparam_opts],
+    "targetp":        [_add_targetp_opts],
+    "deeptmhmm":      [_add_deeptmhmm_opts],
+    "deeploc":        [_add_deeploc_opts],
+    "coords":         [_add_coords_opts],
+    "weblogo":        [_add_weblogo_opts],
+    "meme":           [_add_meme_opts],
+    "trim":           [_add_trim_opts],
+    "iqtree":         [_add_iqtree_opts],
+    "figures":        [_add_figures_opts],
+}
+
+# Every tool-specific group, added to `run` (which drives the whole pipeline).
+_ALL_OPT_GROUPS = [
+    _add_setupdb_opts, _add_diamond_opts, _add_coords_opts, _add_interpro_opts,
+    _add_targetp_opts, _add_deeptmhmm_opts, _add_deeploc_opts, _add_protparam_opts,
+    _add_weblogo_opts, _add_meme_opts, _add_trim_opts, _add_iqtree_opts, _add_figures_opts,
+]
 
 
 def _add_run_opts(p: argparse.ArgumentParser) -> None:
@@ -238,6 +302,8 @@ def _add_run_opts(p: argparse.ArgumentParser) -> None:
                         "'--add iqtree' also runs its trim prerequisite. See --list-stages.")
     p.add_argument("--list-stages", action="store_true",
                    help="Print the ordered stage keys (for --from-stage/--until/--skip) and exit.")
+    p.add_argument("--species-parallel", dest="SPECIES_PARALLEL", type=int, default=None,
+                   help="Multi-species: concurrent species (0 = auto = cores // threads)")
     p.add_argument("--only-species", dest="SPECIES_ONLY", default=None,
                    type=lambda s: [x.strip() for x in s.split(",") if x.strip()],
                    help="Multi-species: run only these manifest prefixes (comma-separated).")
@@ -268,9 +334,14 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", metavar="<stage>")
     for name, (help_text, _) in COMMANDS.items():
         sp = sub.add_parser(name, help=help_text)
-        _add_global_opts(sp)
+        _add_common_opts(sp)
         if name == "run":
+            for adder in _ALL_OPT_GROUPS:       # run drives the whole pipeline
+                adder(sp)
             _add_run_opts(sp)
+        else:
+            for adder in STAGE_OPTS.get(name, []):
+                adder(sp)
     return parser
 
 

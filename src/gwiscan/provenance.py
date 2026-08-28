@@ -65,8 +65,7 @@ def run(cfg: Config) -> None:
 
     lines += ["", "--- Tool versions ---"]
     probes = [
-        ("hmmscan", ["hmmscan", "-h"]),
-        ("hmmpress", ["hmmpress", "-h"]),
+        ("hmmsearch", ["hmmsearch", "-h"]),
         ("diamond", ["diamond", "version"]),
         ("seqkit", ["seqkit", "version"]),
         ("mafft", ["mafft", "--version"]),
