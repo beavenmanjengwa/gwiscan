@@ -10,7 +10,8 @@
 ####################################################################################################
 """
 
-from gwiscan.score import HEADER, family_metrics, round1_subjects, verdict
+from gwiscan.config import Config
+from gwiscan.score import HEADER, blast_hits_by_family, family_metrics, verdict
 
 MIN = 0.7
 
@@ -25,7 +26,7 @@ def test_concordant_family():
 
 
 def test_hmm_dominant_family_blast_finds_nothing():
-    # divergent family (e.g. GNA/bulb-type): hmmscan hits, DIAMOND round 1 empty
+    # divergent family (e.g. GNA/bulb-type): hmmsearch hits, DIAMOND empty
     m = family_metrics({"P1", "P2", "P3", "P4"}, set(), has_hmm=True, concordance_min=MIN)
     assert m["n_blast"] == 0 and m["jaccard"] == 0.0
     assert m["hmm_only_frac"] == 1.0
@@ -69,10 +70,15 @@ def test_metrics_cover_every_written_column():
     assert set(HEADER[2:]) <= set(m)
 
 
-def test_round1_subjects_reads_the_sseqid_column(tmp_path):
-    r1 = tmp_path / "diamond_GNA_r1.tsv"
-    r1.write_text("q1\tP1\t80.0\t100\t0\t0\t1\t100\t1\t100\t1e-40\t150\n"
-                  "q1\tP2\t60.0\t100\t0\t0\t1\t100\t1\t100\t1e-20\t100\n"
-                  "q2\tP1\t55.0\t100\t0\t0\t1\t100\t1\t100\t1e-15\t90\n")
-    assert round1_subjects(r1) == {"P1", "P2"}
-    assert round1_subjects(tmp_path / "absent.tsv") == set()
+def test_blast_hits_by_family_groups_members(tmp_path):
+    # concordance compares hmmsearch vs ALL DIAMOND BLAST members (blast_hits.tsv),
+    # grouped per family.
+    cfg = Config(root=tmp_path)
+    cfg.result("blast_hits.tsv").write_text(
+        "proteinId\tfamily\taccession\tevalue\tbitscore\tstart\tend\tmethod\n"
+        "P1\tGNA\t-\t1e-40\t150\t1\t100\tblast\n"
+        "P2\tGNA\t-\t1e-20\t100\t1\t100\tblast\n"
+        "P3\tCRA\t-\t1e-10\t80\t1\t100\tblast\n"
+    )
+    assert blast_hits_by_family(cfg) == {"GNA": {"P1", "P2"}, "CRA": {"P3"}}
+    assert blast_hits_by_family(Config(root=tmp_path / "empty")) == {}

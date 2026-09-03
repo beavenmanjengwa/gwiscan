@@ -1,14 +1,30 @@
-# Multi-species manifest. Copy to config/species.tsv to enable multi-species mode:
-#   gwiscan run           # runs every species below as an independent parallel job
-# Each species writes into its own results/<Prefix>/; the prefix also prefixes
-# the systematic domain ids (e.g. AthGNA001.1). Proteome paths are relative to the
-# project directory (or absolute). Throttle concurrency with SPECIES_PARALLEL.
+# =====================================================================================
+# GWIscan species manifest — MULTI-SPECIES runs
+# =====================================================================================
+# Copy this file to  config/species.tsv  to enable multi-species mode, then run
+# gwiscan as usual. Every species below is processed in the same run.
 #
-# Annotation is optional: that species' REPRESENTATIVE GTF/GFF3 -- the same
-# one-transcript-per-gene set its proteome comes from -- giving every member its
-# chromosome, start, end and strand for the chromosomal distribution figure. Leave
-# the cell empty for a species whose annotation you do not have; that species is
-# still analysed, only without chromosomal coordinates.
+# One row per species. TAB-separated. Whole-line '#' comments and blank lines are
+# ignored (put each comment on its own line beginning with '#').
+#
+# Each species writes into its own final_results/<Prefix>/ and intermediate/<Prefix>/.
+# The prefix also leads the systematic domain ids (Ath gives AthGNA001.1).
+# Use SPECIES_PARALLEL to set how many species run at once.
+#
+# COLUMNS
+#   Prefix        Short species label. Used verbatim in output paths and domain ids.
+#                 Required and unique.
+#
+#   Proteome      Protein FASTA for that species, one protein per gene. Paths are
+#                 relative to the project directory, or absolute. Required.
+#
+#   Annotation    Optional. The representative GTF/GFF3 the proteome came from, that
+#                 is, the same one-transcript-per-gene set. Gives every member its
+#                 chromosome, start, end, and strand. Leave the cell empty for a
+#                 species whose annotation you do not have; that species is still
+#                 analysed, only without chromosomal coordinates.
+#
+# ------------------------------------------------------------------------------
 Prefix	Proteome	Annotation
 Ath	genomes/Athaliana.fasta	genomes/Athaliana.gtf
 Gma	genomes/Gmax.fasta	genomes/Gmax.gtf

@@ -1,45 +1,46 @@
-# =================================================================================#
-# GWIscan family table — MULTI-FAMILY mode (families grouped under a multi-family)   #
-# =================================================================================#
+# =====================================================================================
+# GWIscan family table — MULTI-FAMILY mode (families grouped under a multi-family)    
+# =====================================================================================
 # Copy this file to  config/multi-family.tsv  and edit it for your study families,
 # and set  MODE: multi-family  in config.yaml.
 #
 # Multi-family mode adds a multi-family rollup on top of the per-family results
-# (e.g. Lectin over GNA, Legume, CRA). Every processing step matches family mode;
-# the leading Multifamily column drives the rollup.
+# (for example Lectin over GNA, Legume, CRA). Every processing step matches family
+# mode; the leading Multifamily column drives the rollup.
 #
 # One row per family. TAB-separated. Whole-line '#' comments and blank lines are
 # ignored (put each comment on its own line beginning with '#').
 #
 # COLUMNS  (family-mode columns, with a leading Multifamily column)
-#   Multifamily The grouping label this family rolls up into. Required in this
-#               mode; families sharing a value are reported together.
+#   Multifamily   The grouping label this family rolls up into. Required in this
+#                 mode; families sharing a value are reported together.
 #
-#   Family      Study family name. Used verbatim in outputs and domain ids
-#               (e.g. GNA -> AthGNA001.1). Required and unique.
+#   Family        Study family name. Used verbatim in outputs and domain ids
+#                 (GNA gives AthGNA001.1). Required and unique.
 #
-#   PfamModel   How the family is identified and confirmed — one of:
-#                 PFxxxxx   Pfam accession: hmmscan + DIAMOND, then confirmed by
-#                           InterProScan reporting that Pfam. Use only for a Pfam
-#                           specific to the family.
-#                 name.hmm  custom family-specific HMM in db/hmm/: hmmscan (this
-#                           HMM) + DIAMOND, merged, NO InterProScan; its own
-#                           hmmscan hit gives the coordinates. Its NAME line must
-#                           equal the Family. Use when the family's Pfam is a
-#                           shared/ancestral domain, not specific to the family.
-#                 -         no HMM: DIAMOND only, merged, no InterProScan.
+#   PfamModel     How the family is IDENTIFIED — one of:
+#                   PFxxxxx   Pfam accession: hmmsearch + DIAMOND.
+#                   name.hmm  custom family-specific HMM in db/hmm/ (NAME line must
+#                             equal the Family): hmmsearch + DIAMOND. Use when the
+#                             family's Pfam is a shared or ancestral domain.
+#                   -         no HMM: DIAMOND only.
 #
-#   BlastModel  Reference protein FASTA (in db/blast/) used as the DIAMOND round-1
-#               query. DIAMOND runs for every family, so this is required for all.
+#   BlastModel    Reference protein FASTA (in db/blast/) used as the DIAMOND round-1
+#                 query. DIAMOND runs for every family, so this is required for all.
 #
-# Rule: InterProScan runs ONLY for families whose PfamModel is a Pfam accession.
-
-# ----------------------------------------------------------------------------
-Multifamily	Family	PfamModel	BlastModel
-# specific Pfam -> hmmscan + DIAMOND, InterProScan-confirmed:
+#   InterProModel Optional. Accession(s) that CONFIRM a candidate via InterProScan; a
+#                 candidate is kept when it carries any of them. One of three, by
+#                 prefix: PF... (Pfam), cd... (CDD), PTHR... (PANTHER). Pipe-separated
+#                 for alternatives. GWIscan enables the matching applications
+#                 automatically. Blank falls back to the PfamModel accession. A family
+#                 with no usable Pfam model (PfamModel = -) can still be confirmed by
+#                 giving a CDD or PANTHER accession here; a family with neither is not
+#                 confirmed.
+#
+# ------------------------------------------------------------------------------
+Multifamily	Family	PfamModel	BlastModel	InterProModel
+# specific Pfam -> hmmsearch + DIAMOND, confirmed on that Pfam:
 Lectin	GNA	PF01453	AAA33346.1.fasta
 Lectin	Legume	PF00139	AAA33983.1.fasta
-# custom curated HMM (in db/hmm/CRA.hmm) -> hmmscan + DIAMOND, merged, no InterProScan:
-Lectin	CRA	CRA.hmm	ABL98074.1.fasta
-# no HMM -> DIAMOND only, merged, no InterProScan:
-Lectin	EUL	-	ABW73993.1.fasta
+# Lacks Pfam so confirmed using PANTHER accession:
+Lectin	EUL	-	ABW73993.1.fasta	PTHR31257

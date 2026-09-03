@@ -111,9 +111,9 @@ def _apply_band_header(ws, spans) -> None:
     ws.freeze_panes = f"{get_column_letter(min(3, ws.max_column))}3"
 
 
-def _load(path, label):
+def _load(path, label, reader=io.read_tsv):
     if path.exists():
-        df = io.read_tsv(path, low_memory=False)
+        df = reader(path, low_memory=False)
         external.log(f"[OK] Loaded {label}: {len(df)} rows, columns: {list(df.columns)[:6]}...")
         return df
     external.log(f"[WARN] {label} not found, skipping: {path}")
@@ -253,7 +253,7 @@ def run(cfg: Config) -> None:
             ann["protein_id"] = ann["protein_id"].astype(str)
             df = df.merge(ann, on="protein_id", how="left")
 
-    ipr = _load(cfg.result("interproscan.tsv"), "interproscan")
+    ipr = _load(cfg.result("interproscan.tsv"), "interproscan", reader=io.read_interpro_tsv)
     if ipr is not None:
         ipr["protein_id"] = ipr["protein_id"].astype(str)
 
@@ -379,6 +379,14 @@ def run(cfg: Config) -> None:
                 dl, on="protein_id", how="left"
             )
             loc_df.rename(columns=io.to_camel).to_excel(writer, sheet_name="Localization", index=False)
+
+        # Tool_versions sheet: every tool used in the annotation with its version,
+        # so the workbook itself records which software (and InterPro release)
+        # produced the inventory — no need to cross-reference provenance.txt. Same
+        # source of truth as provenance (provenance.tool_versions).
+        from . import provenance
+        ver_df = pd.DataFrame(provenance.tool_versions(cfg), columns=["Tool", "Version"])
+        ver_df.to_excel(writer, sheet_name="Tool_versions", index=False)
 
     external.log("[OK] Final XLSX saved: gwiscan_results.xlsx")
     external.log("=" * 60)

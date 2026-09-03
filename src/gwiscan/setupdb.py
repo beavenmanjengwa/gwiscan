@@ -108,12 +108,13 @@ def setup_shared(cfg: Config) -> None:
                     f"custom HMM for family '{r['family']}' not found: {dest} "
                     f"(build it and place it in db/hmm/)"
                 )
-            # A custom HMM without GA thresholds makes the later `hmmsearch --cut_ga`
-            # abort the whole search, so refuse it now with the same guidance
-            # preflight gives.
-            ga_error = hmm.custom_hmm_ga_error(dest, r["family"])
-            if ga_error:
-                raise ValueError(ga_error)
+            # In cutoff mode a custom HMM without the chosen cutoff line (GA/TC/NC)
+            # makes the later `hmmsearch --cut_<kind>` abort the whole search, so
+            # refuse it now with the same guidance preflight gives. With HMM_EVALUE set
+            # the search uses -E, so a missing cutoff line is acceptable.
+            cutoff_error = hmm.custom_hmm_cutoff_error(dest, r["family"], cfg)
+            if cutoff_error:
+                raise ValueError(cutoff_error)
             external.log(f"[OK] custom HMM present: {dest.name}")
         else:
             dest = _ensure_hmm(cfg, r["pfam_model"])

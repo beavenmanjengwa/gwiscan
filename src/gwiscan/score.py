@@ -9,11 +9,9 @@
 # and missed by BLAST entirely. Running both searches genome-wide makes that difference            #
 # measurable, so it is reported per family instead of assumed.                                     #
 #                                                                                                  #
-# The two hit sets compared are independent by construction:                                       #
-#   H  - hmmsearch hits (profile vs proteome, gathering threshold).                                  #
-#   R1 - DIAMOND ROUND 1 subjects (family model vs proteome, --very-sensitive, E-value).           #
-# Round 2 is excluded on purpose: its seeds are hmmsearch-validated, so comparing against it would   #
-# measure the pipeline's own wiring rather than the family's detectability.                        #
+# The two hit sets compared are two independent methods, each as its full result:                   #
+#   H - hmmsearch hits (profile HMM vs proteome).                                                    #
+#   B - DIAMOND BLAST members (blast_hits.tsv), the full two-round result.                           #
 #                                                                                                  #
 # Writes intermediate/family_detectability.tsv (raw counts and fractions, always) and logs a per-family #
 # verdict naming the concrete action where identification is weak.                                 #
@@ -23,13 +21,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from . import external, io
 from .config import Config
-from .diamond import DIAMOND_FIELDS
-
-_SSEQID = DIAMOND_FIELDS.index("sseqid")
 
 HEADER = [
     "family", "has_hmm", "n_hmm", "n_blast", "n_both", "n_union",
@@ -38,13 +31,15 @@ HEADER = [
 ]
 
 
-def round1_subjects(path: Path | str) -> set:
-    """Subject ids from a DIAMOND round-1 table (BLAST evidence, HMM-independent)."""
-    path = Path(path)
+def blast_hits_by_family(cfg: Config) -> dict:
+    """{family: {protein_id, ...}} from blast_hits.tsv — every DIAMOND BLAST member
+    (the full two-round result)."""
+    path = cfg.result("blast_hits.tsv")
     if not path.exists():
-        return set()
-    with open(path, encoding="utf-8") as handle:
-        return {line.split("\t")[_SSEQID] for line in handle if line.strip()}
+        return {}
+    hits = io.read_tsv(path)
+    return {str(family): set(sub["protein_id"].astype(str))
+            for family, sub in hits.groupby("family")}
 
 
 def hmm_hits_by_family(cfg: Config) -> dict:
@@ -101,7 +96,7 @@ def verdict(family: str, metrics: dict) -> str:
     """A log line stating what the family's detectability class means for the run."""
     detectability = metrics["detectability"]
     if detectability == "hmm_dominant":
-        return (f"[VERDICT] {family}: HMM-dominant — DIAMOND round 1 recovered "
+        return (f"[VERDICT] {family}: HMM-dominant — DIAMOND recovered "
                 f"{metrics['blast_recall_of_hmm']:.0%} of the {metrics['n_hmm']} hmmsearch hits. "
                 f"A BLAST-only survey of this family would under-report it.")
     if detectability == "blast_dominant":
@@ -119,16 +114,17 @@ def verdict(family: str, metrics: dict) -> str:
 def run(cfg: Config) -> None:
     """Profile every family's detectability and write family_detectability.tsv."""
     cfg.ensure_dirs()
-    external.log("[score] Per-family detectability: hmmsearch vs independent DIAMOND round 1")
+    external.log("[score] Per-family detectability: hmmsearch vs DIAMOND BLAST")
 
     by_family = hmm_hits_by_family(cfg)
+    blast_by_family = blast_hits_by_family(cfg)
     rows, counts = [], {}
 
     for record in io.family_records(cfg.family_map):
         family = record["family"]
         metrics = family_metrics(
             by_family.get(family, set()),
-            round1_subjects(cfg.result(f"diamond_{family}_r1.tsv")),
+            blast_by_family.get(family, set()),
             bool(record["hmm_press"]),
             cfg.CONCORDANCE_MIN,
         )

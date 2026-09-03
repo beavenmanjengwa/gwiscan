@@ -88,16 +88,16 @@ _OVERRIDE_KEYS = (
     "THREADS",
     "VERBOSE",
     "MODE",
+    "HMM_EVALUE",
+    "HMM_CUTOFF",
     "DIAMOND_EVALUE",
-    "DIAMOND_IDENTITY",
-    "DIAMOND_COVERAGE_R2",
     "DIAMOND_SENSITIVITY",
     "DIAMOND_BSR",
     "PRIMARY_TRANSCRIPT",
     "ANNOTATION",
     "EBI_EMAIL",
-    "INTERPRO_APPL",
     "INTERPRO_MODE",
+    "IPRSCAN_VERSION",
     "INTERPROSCAN_BIN",
     "INTERPRO_LOOKUP",
     "TARGETP_BIN",
@@ -105,13 +105,20 @@ _OVERRIDE_KEYS = (
     "DEEPLOC_BIN",
     "DEEPLOC_MODEL",
     "DEEPTMHMM_VERSION",
+    "DEEPTMHMM_MODE",
+    "DEEPTMHMM_DIR",
+    "DEEPTMHMM_PYTHON",
     "PROTPARAM_FORMATS",
     "SPECIES_PREFIX",
+    "MAFFT_ALGORITHM",
     "MEME_NMOTIFS",
+    "MEME_MINW",
+    "MEME_MAXW",
     "WEBLOGO_BIN",
     "MEME_BIN",
     "CLIPKIT_BIN",
     "CLIPKIT_MODE",
+    "CLIPKIT_GAPS",
     "RSCRIPT_BIN",
     "IQTREE_BIN",
     "IQTREE_MODEL",
@@ -156,16 +163,24 @@ def _add_common_opts(p: argparse.ArgumentParser) -> None:
 def _add_diamond_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--evalue", dest="DIAMOND_EVALUE", default=None,
                    help="DIAMOND E-value cutoff")
-    p.add_argument("--identity", dest="DIAMOND_IDENTITY", type=int, default=None,
-                   help="DIAMOND round-2 min %% identity (round 1 is E-value only)")
-    p.add_argument("--coverage-r2", dest="DIAMOND_COVERAGE_R2", type=int, default=None,
-                   help="DIAMOND round-2 min %% query coverage")
     p.add_argument("--diamond-sensitivity", dest="DIAMOND_SENSITIVITY", default=None,
                    help="DIAMOND sensitivity mode for both rounds: fast, mid-sensitive, "
                         "sensitive, more-sensitive, very-sensitive, ultra-sensitive "
                         "(default ultra-sensitive, matches NCBI BLASTP)")
     p.add_argument("--diamond-bsr", dest="DIAMOND_BSR", type=float, default=None,
-                   help="Blast Score Ratio seed cutoff for no-HMM families (default 0.4)")
+                   help="Blast Score Ratio round-2 seed cutoff, every family (default 0.15)")
+
+
+def _add_hmm_opts(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--hmm-evalue", dest="HMM_EVALUE", default=None,
+                   help="hmmsearch sequence E-value cutoff (e.g. 1e-5); default uses each "
+                        "model's Pfam cutoff (see --hmm-cutoff). An E-value also allows custom "
+                        "HMMs without a cutoff line and a more sensitive search")
+    p.add_argument("--hmm-cutoff", dest="HMM_CUTOFF", default=None,
+                   choices=["ga", "tc", "nc"],
+                   help="Pfam model cutoff hmmsearch applies (when --hmm-evalue is unset): "
+                        "ga (gathering, default), tc (trusted, strictest) or nc (noise, "
+                        "loosest). Maps to --cut_ga/--cut_tc/--cut_nc")
 
 
 def _add_setupdb_opts(p: argparse.ArgumentParser) -> None:
@@ -182,11 +197,15 @@ def _add_coords_opts(p: argparse.ArgumentParser) -> None:
 def _add_interpro_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--ebi-email", dest="EBI_EMAIL", default=None,
                    help="Email for the EBI InterProScan API")
-    p.add_argument("--interpro-appl", dest="INTERPRO_APPL", default=None,
-                   help="InterProScan 6 member db(s), comma-separated (default Pfam)")
     p.add_argument("--interpro-mode", dest="INTERPRO_MODE", default=None,
                    choices=["api", "local"],
                    help="InterProScan: api (EBI REST) or local (installed interproscan.sh)")
+    p.add_argument("--iprscan-version", dest="IPRSCAN_VERSION", type=int, default=None,
+                   choices=[5, 6],
+                   help="EBI InterProScan REST API version (api mode): 5 (default, stable) "
+                        "or 6. v5 and v6 name the same databases differently (PfamA/Panther "
+                        "vs Pfam/PANTHER); GWIscan maps them automatically, so do not mix "
+                        "v5 and v6 application names. Use 5 if v6's lookup step fails.")
     p.add_argument("--interproscan-bin", dest="INTERPROSCAN_BIN", default=None,
                    help="Path/name of the local InterProScan executable (local mode)")
     p.add_argument("--interpro-lookup", dest="INTERPRO_LOOKUP",
@@ -204,6 +223,14 @@ def _add_targetp_opts(p: argparse.ArgumentParser) -> None:
 def _add_deeptmhmm_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--deeptmhmm-version", dest="DEEPTMHMM_VERSION", default=None,
                    help="Pinned DeepTMHMM biolib version (default 1.0.24, runs locally)")
+    p.add_argument("--deeptmhmm-mode", dest="DEEPTMHMM_MODE", default=None,
+                   choices=["biolib", "local"],
+                   help="How DeepTMHMM runs: biolib (the pybiolib CLI, default) or local "
+                        "(a standalone install; set --deeptmhmm-dir and --deeptmhmm-python)")
+    p.add_argument("--deeptmhmm-dir", dest="DEEPTMHMM_DIR", default=None,
+                   help="Local mode: the standalone DeepTMHMM directory (predict.py + models)")
+    p.add_argument("--deeptmhmm-python", dest="DEEPTMHMM_PYTHON", default=None,
+                   help="Local mode: Python interpreter that can run DeepTMHMM's predict.py")
 
 
 def _add_deeploc_opts(p: argparse.ArgumentParser) -> None:
@@ -225,11 +252,21 @@ def _add_weblogo_opts(p: argparse.ArgumentParser) -> None:
                    help="WebLogo executable: PATH name or absolute path (default weblogo)")
 
 
+def _add_msa_opts(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--mafft-algorithm", dest="MAFFT_ALGORITHM", default=None,
+                   help="MAFFT strategy: auto (default), linsi/ginsi/einsi (accurate "
+                        "L/G/E-INS-i for divergent sets), or fftns2 (fast, large sets)")
+
+
 def _add_meme_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--meme-bin", dest="MEME_BIN", default=None,
                    help="MEME executable: PATH name or absolute path (default meme)")
     p.add_argument("--meme-nmotifs", dest="MEME_NMOTIFS", type=int, default=None,
                    help="Number of MEME motifs per family (default 15)")
+    p.add_argument("--meme-minw", dest="MEME_MINW", default=None,
+                   help="Minimum MEME motif width (default: MEME's own, 6)")
+    p.add_argument("--meme-maxw", dest="MEME_MAXW", default=None,
+                   help="Maximum MEME motif width (default: MEME's own, 50)")
 
 
 def _add_trim_opts(p: argparse.ArgumentParser) -> None:
@@ -237,6 +274,8 @@ def _add_trim_opts(p: argparse.ArgumentParser) -> None:
                    help="ClipKIT executable: PATH name or absolute path (default clipkit)")
     p.add_argument("--clipkit-mode", dest="CLIPKIT_MODE", default=None,
                    help="ClipKIT trimming mode: smart-gap (default), gappy, kpic, kpic-smart-gap, ...")
+    p.add_argument("--clipkit-gaps", dest="CLIPKIT_GAPS", default=None,
+                   help="ClipKIT gap threshold for the gappy modes (default 0.9)")
 
 
 def _add_iqtree_opts(p: argparse.ArgumentParser) -> None:
@@ -259,6 +298,7 @@ def _add_figures_opts(p: argparse.ArgumentParser) -> None:
 # A stage not listed here shows only the common options. `run` shows every group.
 STAGE_OPTS = {
     "setup-db":       [_add_setupdb_opts],
+    "search-hmm":     [_add_hmm_opts],
     "search-diamond": [_add_diamond_opts],
     "interpro":       [_add_interpro_opts],
     "protparam":      [_add_protparam_opts],
@@ -266,6 +306,7 @@ STAGE_OPTS = {
     "deeptmhmm":      [_add_deeptmhmm_opts],
     "deeploc":        [_add_deeploc_opts],
     "coords":         [_add_coords_opts],
+    "msa":            [_add_msa_opts],
     "weblogo":        [_add_weblogo_opts],
     "meme":           [_add_meme_opts],
     "trim":           [_add_trim_opts],
@@ -275,9 +316,10 @@ STAGE_OPTS = {
 
 # Every tool-specific group, added to `run` (which drives the whole pipeline).
 _ALL_OPT_GROUPS = [
-    _add_setupdb_opts, _add_diamond_opts, _add_coords_opts, _add_interpro_opts,
+    _add_setupdb_opts, _add_hmm_opts, _add_diamond_opts, _add_coords_opts, _add_interpro_opts,
     _add_targetp_opts, _add_deeptmhmm_opts, _add_deeploc_opts, _add_protparam_opts,
-    _add_weblogo_opts, _add_meme_opts, _add_trim_opts, _add_iqtree_opts, _add_figures_opts,
+    _add_msa_opts, _add_weblogo_opts, _add_meme_opts, _add_trim_opts, _add_iqtree_opts,
+    _add_figures_opts,
 ]
 
 

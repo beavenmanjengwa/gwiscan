@@ -90,7 +90,7 @@ def run(cfg: Config) -> None:
         raise FileNotFoundError(f"interproscan.tsv not found: {interpro} (run `interpro` first)")
 
     candidates_df = io.read_tsv(merged)
-    interpro_df = io.read_tsv(interpro)
+    interpro_df = io.read_interpro_tsv(interpro)
     if cfg.is_architecture:
         # Every architecture takes its domain coordinates from its own hmmscan hits
         # (the primary + required domains), like a custom-HMM family.

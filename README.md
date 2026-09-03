@@ -1,18 +1,20 @@
 # GWIscan (Genome-Wide Identification scan)
 
-GWIscan is a pipeline for the genome-wide identification and annotation of gene
-families. It combines BLAST, profile hidden Markov models, and InterProScan for
-identification. It runs in family, multi-family, or architecture modes, on a single
-proteome or across multiple species. It provides annotation including gene
-coordinates, domain architecture, physicochemical properties, signal-peptide and
-transmembrane topology, subcellular localization, and GO terms. It can also perform
-multiple sequence alignment, MEME motif discovery, and phylogenetic tree construction.
+GWIscan is a pipeline for the genome-wide identification and in silico characterization of
+gene families. It combines homology-based search, profile hidden Markov model search, and 
+InterPro family signatures for identification. It runs in family, multi-family, or architecture
+modes, on a single proteome or across multiple species. It provides annotation including gene  
+coordinates, domain architecture, physicochemical properties, signal peptides and transmembrane 
+topology, subcellular localization, and GO terms. It can also perform multiple sequence alignment,
+MEME motif discovery, and phylogenetic tree construction.
 
 ## Installation
 
 Install from Bioconda (pulls in the search and alignment tools automatically):
 
 ```bash
+mamba create -n gwiscan -c bioconda -c conda-forge gwiscan
+# Or use conda
 conda create -n gwiscan -c bioconda -c conda-forge gwiscan
 conda activate gwiscan
 ```
@@ -20,7 +22,8 @@ conda activate gwiscan
 Or build the environment from source:
 
 ```bash
-mamba env create -f environment.yml      # or 'conda env create' (mamba resolves dependencies faster)
+mamba env create -f environment.yml      
+# or 'conda env create', mamba can resolves dependencies faster
 conda activate gwiscan
 pip install -e .                         # the `gwiscan` command
 ```
@@ -30,6 +33,18 @@ Either way you get `HMMER`, `diamond`, `seqkit`, `mafft`, `clipkit`, `iqtree`,
 `pybiolib` (`pip install pybiolib`; already included in the source environment). InterProScan uses the EBI web service
 by default (set `EBI_EMAIL`); to run it offline, install InterProScan and set
 `INTERPRO_MODE: local` and `INTERPROSCAN_BIN` if it's not executable at system level.
+
+The EBI web service has two API versions, chosen with `IPRSCAN_VERSION` (config /
+env) or `--iprscan-version {5,6}` (CLI). **Default is `5`**, the stable
+InterProScan 5 service. `6` targets InterProScan 6, whose match-lookup step has a
+known server-side fault that fails every job; if you hit it, GWIscan stops and
+tells you to rerun with `--iprscan-version 5`. The two versions name the same
+databases differently (v5 `PfamA`/`Panther`, v6 `Pfam`/`PANTHER`); GWIscan derives
+the applications from the family table and maps them to the chosen version
+automatically, so you never set application names by hand. The InterProScan and
+InterPro release that produced a run are recorded in
+`intermediate/<species>/interproscan/interproscan.manifest.txt`, in the
+`Tool_versions` sheet of `gwiscan_results.xlsx`, and in `provenance.txt`.
 
 [TargetP 2.0](https://services.healthtech.dtu.dk/services/TargetP-2.0/) and
 [DeepLoc 2.1](https://services.healthtech.dtu.dk/services/DeepLoc-2.1/) should be
@@ -74,14 +89,14 @@ The columns are:
 | Column | Meaning |
 |--------|---------|
 | `Family` | Family name. Used in the outputs and domain ids (for example `GNA` gives `AthGNA001.1`). |
-| `PfamModel` | A Pfam accession (`PF01453`), a custom HMM file in `db/hmm/` (`name.hmm`), or `-` for none. A custom identifying HMM must declare GA (gathering) thresholds, because the HMM search runs `hmmscan --cut_ga`; preflight checks this and tells you how to fix it. |
+| `PfamModel` | How the family is IDENTIFIED: a Pfam accession (`PF01453`), a custom HMM file in `db/hmm/` (`name.hmm`), or `-` for none (DIAMOND only). A custom identifying HMM must declare the model cutoff the run uses, because the HMM search runs `hmmsearch --cut_<HMM_CUTOFF>` by default (`ga` gathering, `tc` trusted, or `nc` noise); preflight checks this (or set `HMM_EVALUE` to use an E-value cutoff instead). |
 | `BlastModel` | The DIAMOND query FASTA in `db/blast/`. Every family needs one. |
+| `InterProModel` | Optional. Accession(s) that CONFIRM a candidate via InterProScan: a Pfam (`PF...`), CDD (`cd...`), or PANTHER (`PTHR...`) id, pipe-separated for alternatives (`PF01476\|PTHR27007`). GWIscan enables the matching applications automatically. Blank falls back to the `PfamModel` accession. A family with no usable Pfam model (`PfamModel` = `-`) can still be confirmed by giving a CDD or PANTHER accession here. |
 
 ```
-Family    PfamModel   BlastModel
+Family    PfamModel   BlastModel          InterProModel
 GNA       PF01453     AAA33346.1.fasta
-CRA       CRA.hmm     ABL98074.1.fasta
-EUL       -           ABW73993.1.fasta
+EUL       -           ABW73993.1.fasta    PTHR31257
 ```
 
 ## Architecture mode
@@ -91,11 +106,10 @@ This mode identifies genes that encode proteins with a given domain architecture
 seeds the family, plus one or more **required** domains that must also be present.
 Both are Pfam HMMs.
 
-The search runs in two hmmscan passes:
+The search runs in two HMMER hmmsearch passes:
 
-1. hmmscan the whole proteome against the **primary** HMM(s) to get candidates.
-2. hmmscan only those candidates against the primary+required HMMs, keeping the
-   ones that also carry every required domain. Those are the final candidates.
+1. hmmsearch the whole proteome against the **primary** HMM(s) to get candidates.
+2. hmmsearch only those candidates against the primary+required HMMs.
 
 The final candidates then go through InterProScan, ProtParam, TargetP,
 DeepTMHMM, DeepLoc, coordinate mapping, and result compilation. `family` holds
@@ -150,13 +164,18 @@ default; enable it with `--add iqtree` (or `ADD_STAGES: [iqtree]` in `config.yam
 `weblogo` and `meme` are optional and skipped if their tool is not installed. Any
 flag above also works as a `config.yaml` setting or env var.
 
-To scan several species, add `config/species.tsv` (`Prefix`, `Proteome`):
+To scan several species, add `config/species.tsv` (`Prefix`, `Proteome`,
+`Annotation`):
 
 ```
-Prefix   Proteome
-Ath      genomes/Athaliana.fasta
-Gma      genomes/Gmax.fasta
+Prefix   Proteome                  Annotation
+Ath      genomes/Athaliana.fasta   genomes/Athaliana.gtf
+Gma      genomes/Gmax.fasta        genomes/Gmax.gtf
 ```
+
+`Annotation` is optional. Provide the GTF/GFF3 that matches the proteome, and each member's 
+chromosome, start, end, and strand will be included. Leave the cell empty and the species is
+still analysed, just without chromosomal coordinates.
 
 Each species has its own `final_results/<Prefix>/` and `intermediate/<Prefix>/`
 folders. Species are scheduled stage by stage: every species finishes a stage before
@@ -167,6 +186,12 @@ Some stages run one species at a time instead: `deeptmhmm`, `targetp`, and `deep
 cannot share at once, such as a single GPU, a large in-memory model, or a
 license-limited tool. The per-species thread count is rebalanced for each stage, so a stage running
 one species at a time still uses every core.
+
+The annotation stage is the most demanding stage, since `DeepTMHMM`, `TargetP`, and `DeepLoc` run neural 
+network models whose runtime scales with the number of confirmed members and the available hardware.
+In multi-species runs these stages process one species at a time by default, a behaviour controlled 
+by SERIAL_STAGES, while the per-species thread count is rebalanced within each stage to use the 
+available cores, and the number of species running in parallel is limited by SPECIES_PARALLEL. 
 
 Three settings control how many species run at once, from a global default to a
 per-stage override:
@@ -192,25 +217,26 @@ One species failing does not stop the others; use `--only-species Ath,Gma` or
 After the species finish, a cross-species summary is written to the top-level
 `final_results/`:
 
-- `all_species_summary.tsv` / `.xlsx` — a families (rows) by species (columns)
+- `all_species_summary.tsv` / `.xlsx`: a families (rows) by species (columns)
   matrix of the member protein count, with per-family and per-species totals. Every
   configured family has a row, so families absent in a species show as 0.
-- `all_species_members.tsv` — every species' members stacked into one table with a
+- `all_species_members.tsv`: every species' members stacked into one table with a
   `species` column.
 
 This works in every mode (in architecture mode the rows are the architectures).
 
 Each stage can also run on its own (`gwiscan <stage>`); `gwiscan <stage> --help`
 lists the options. Settings are read in this order: built-in defaults, then
-`config.yaml`, then env vars, then command-line flags. Any setting can be given
-as an environment variable named `GWISCAN_<KEY>` (e.g. `GWISCAN_THREADS`); the
-bare `<KEY>` name still works, but the `GWISCAN_` prefix is preferred for the few
-generic names (`THREADS`, `OUTPUT`, `MODE`, `ANNOTATION`) so they cannot pick up an
-unrelated value already in your environment.
+`config.yaml`, then environment variables, then command-line flags. Any setting can be
+set as an environment variable, either as `<KEY>` or as `GWISCAN_<KEY>` (for example
+`GWISCAN_THREADS`). For most settings either form works. For a few generic names
+(`THREADS`, `OUTPUT`, `MODE`, `ANNOTATION`) use the `GWISCAN_` prefix, since your
+shell or another program may already use the bare name for something else, and GWIscan 
+would otherwise pick up that unrelated value.
 
 ## Outputs
 
-Deliverables go to `final_results/`; working files to `intermediate/`. In
+Compiled results go to `final_results/`; working files to `intermediate/`. In
 multi-species runs each species has its own `final_results/<Prefix>/` and
 `intermediate/<Prefix>/`.
 
@@ -219,7 +245,7 @@ multi-species runs each species has its own `final_results/<Prefix>/` and
 | `final_results/gwiscan_results.tsv` / `.xlsx` | The annotation table, one row per member (the `.xlsx` groups columns by source). Genomic coordinates are added when a GFF or GTF annotation is provided. |
 | `final_results/gwiscan_members.gff3` | The members as genome features. |
 | `final_results/provenance.txt` | Tool versions, settings, and input checksums. |
-| `intermediate/candidates/candidates_merged.tsv` / `.fasta` | Merged candidates from the HMM and BLAST searches. |
+| `intermediate/candidates/candidates_merged.tsv` / `.fasta` | Merged candidates from the HMM and DIAMOND searches. |
 | `intermediate/interproscan/interproscan.tsv` | Domain and GO annotations. |
 | `intermediate/protparam/protparam.tsv` | Physicochemical properties. |
 | `intermediate/prediction/{targetp,deeptmhmm,deeploc}.tsv` | Signal peptide, transmembrane topology, and subcellular localization. |

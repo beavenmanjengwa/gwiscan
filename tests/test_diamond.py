@@ -5,8 +5,8 @@
 # test_diamond.py - DIAMOND search tests: round options, seed selection, best-per-member.          #
 #                                                                                                  #
 # Both rounds search the proteome (hit proteins are the subject, sseqid). Round 1 is --very-       #
-# sensitive, E-value only. Round-2 seeds are HMM-validated (round-1 hits that also pass hmmscan)   #
-# when the family has an HMM, else Blast Score Ratio.                                              #
+# sensitive, E-value only. Round-2 seeds are chosen by Blast Score Ratio for every family; DIAMOND #
+# is self-contained and never reads hmmsearch results.                                            #
 #                                                                                                  #
 ####################################################################################################
 """
@@ -16,7 +16,6 @@ from gwiscan.config import Config
 from gwiscan.diamond import (
     _best_per_member,
     _bsr_seeds,
-    _hmm_validated_seeds,
 )
 
 # outfmt6: qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore
@@ -36,21 +35,6 @@ def _r1(subjects_and_scores):
     )
 
 
-def test_hmm_validated_seeds_are_the_intersection(tmp_path):
-    r1 = tmp_path / "r1.tsv"
-    r1.write_text(_r1([("Prot_A", 300), ("Prot_B", 250), ("Prot_C", 80)]))
-    # hmmscan called Prot_A and Prot_C for this family (not Prot_B).
-    seeds = _hmm_validated_seeds(r1, {"Prot_A", "Prot_C", "Prot_X"})
-    assert seeds == ["Prot_A", "Prot_C"]      # round-1 ∩ hmm hits; Prot_B dropped
-
-
-def test_hmm_validated_seeds_empty_when_no_overlap(tmp_path):
-    r1 = tmp_path / "r1.tsv"
-    r1.write_text(_r1([("Prot_A", 300)]))
-    # DIAMOND's round-1 hit is not an hmmscan hit -> no confident seed (no junk).
-    assert _hmm_validated_seeds(r1, {"Prot_Z"}) == []
-
-
 def test_bsr_seeds_by_ratio(tmp_path):
     r1 = tmp_path / "r1.tsv"
     r1.write_text(_r1([("Prot_A", 400), ("Prot_B", 250), ("Prot_C", 150)]))
@@ -59,7 +43,7 @@ def test_bsr_seeds_by_ratio(tmp_path):
     assert seeds == ["Prot_A", "Prot_B"]      # 0.30 is below 0.4
 
 
-def test_round1_evalue_only_round2_filtered(tmp_path, monkeypatch):
+def test_both_rounds_evalue_only(tmp_path, monkeypatch):
     calls = []
 
     def fake_run(cmd, **kwargs):
@@ -71,16 +55,15 @@ def test_round1_evalue_only_round2_filtered(tmp_path, monkeypatch):
     monkeypatch.setattr(diamond.external, "require", lambda b: None)
     cfg = Config(root=tmp_path)
 
+    # Both rounds are called E-value + sensitivity only -- no identity/coverage.
     diamond._round(cfg, "q", "db", tmp_path / "r1.tsv", sensitivity="--very-sensitive")
     diamond._round(cfg, "q", "db", tmp_path / "r2.tsv",
-                   sensitivity=None, identity=cfg.DIAMOND_IDENTITY,
-                   coverage=cfg.DIAMOND_COVERAGE_R2)
+                   sensitivity=diamond._sensitivity_flag(cfg))
 
     r1, r2 = calls
     assert "--very-sensitive" in r1
     assert "--id" not in r1 and "--query-cover" not in r1   # round 1: E-value only
-    assert "--query-cover" in r2 and "70" in r2             # round 2: coverage 70
-    assert "--id" in r2 and "30" in r2                      # round 2: identity 30
+    assert "--id" not in r2 and "--query-cover" not in r2   # round 2: E-value only
 
 
 def test_sensitivity_flag_from_config(tmp_path):

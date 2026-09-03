@@ -83,3 +83,51 @@ def test_write_is_camel_read_is_snake(tmp_path):
     df = io.read_tsv(p)
     assert list(df.columns) == ["protein_id", "family", "start"]
     assert df.iloc[0]["protein_id"] == "X1"
+
+
+# --- InterProScan confirmation: InterProModel column & application derivation ----
+
+def test_application_for_infers_member_db_from_prefix():
+    assert io.application_for("PF01453") == "Pfam"
+    assert io.application_for("cd02879") == "CDD"
+    assert io.application_for("PTHR31257") == "PANTHER"
+    # Limited to the three gatekeeper databases: anything else is unrecognised.
+    assert io.application_for("SM00108") is None
+    assert io.application_for("PS50000") is None
+    assert io.application_for("XYZ999") is None
+
+
+def test_accession_list_parses_pipe_and_strips_version():
+    assert io._accession_list("PF01476|PTHR27007") == ["PF01476", "PTHR27007"]
+    assert io._accession_list("PF00139.27") == ["PF00139"]     # versionless
+    assert io._accession_list("-") == []
+    assert io._accession_list("") == []
+
+
+_FAMILY_TSV = (
+    "Family\tPfamModel\tBlastModel\tInterProModel\n"
+    "GNA\tPF01453\tgna.fasta\t\n"                       # falls back to PfamModel
+    "CRA\t-\tcra.fasta\tcd02879\n"                      # no Pfam -> CDD
+    "EUL\t-\teul.fasta\tPTHR31257\n"                    # no Pfam -> PANTHER
+    "MULTI\tPF01476\tmulti.fasta\tPF01476|PTHR27007\n"  # confirms on either
+)
+
+
+def _family_map(tmp_path):
+    p = tmp_path / "family.tsv"
+    p.write_text(_FAMILY_TSV)
+    return p
+
+
+def test_family_confirm_accessions_uses_column_or_pfam_fallback(tmp_path):
+    accs = io.family_confirm_accessions(_family_map(tmp_path))
+    assert accs["GNA"] == {"PF01453"}                  # fallback to PfamModel
+    assert accs["CRA"] == {"cd02879"}
+    assert accs["EUL"] == {"PTHR31257"}
+    assert accs["MULTI"] == {"PF01476", "PTHR27007"}
+
+
+def test_interpro_applications_is_the_union(tmp_path):
+    apps = io.interpro_applications(_family_map(tmp_path))
+    # Pfam (GNA/MULTI), CDD (CRA), PANTHER (EUL/MULTI) -- one run over the union.
+    assert set(apps) == {"Pfam", "CDD", "PANTHER"}

@@ -42,8 +42,7 @@
 # The three classic LecRLK subtypes, seeded on the lectin ectodomain (Pfams from
 # the oat LecRLK study): G-type B_lectin PF01453, L-type Lectin_legB PF00139,
 # C-type Lectin_C PF00059; the required kinase is Pkinase PF00069 or Pkinase_Tyr
-# PF07714. Seed on the kinase instead (Primary PF00069, Required the lectin) if you
-# want the more sensitive net at the cost of more candidates.
+# PF07714.
 Architecture	Primary	Required	Class
 G-LecRLK	PF01453	PF00069|PF07714	LecRLK
 L-LecRLK	PF00139	PF00069|PF07714	LecRLK

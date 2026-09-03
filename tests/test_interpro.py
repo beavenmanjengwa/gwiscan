@@ -80,12 +80,12 @@ from gwiscan.features.interpro import _local_cmd
 
 
 def test_local_cmd_offline_by_default(tmp_path):
-    cfg = Config(root=tmp_path, INTERPROSCAN_BIN="interproscan.sh",
-                 INTERPRO_APPL="Pfam,CDD", THREADS=8)
+    cfg = Config(root=tmp_path, INTERPROSCAN_BIN="interproscan.sh", THREADS=8)
     cmd = _local_cmd(cfg, tmp_path / "candidates.fasta", tmp_path / "out")
     assert cmd[0] == "interproscan.sh"
     assert "-f" in cmd and cmd[cmd.index("-f") + 1] == "TSV,GFF3"
-    assert cmd[cmd.index("-appl") + 1] == "Pfam,CDD"
+    # No family table here, so the derivation falls back to Pfam.
+    assert cmd[cmd.index("-appl") + 1] == "Pfam"
     assert cmd[cmd.index("-cpu") + 1] == "8"
     assert "-goterms" in cmd
     assert "-dp" in cmd                       # offline by default
@@ -217,9 +217,10 @@ def test_submit_and_getters_go_through_the_retrying_session(monkeypatch):
 
     monkeypatch.setattr(interpro, "_session", lambda: _FakeSession())
 
-    assert interpro._submit("e@x.z", ">s\nACD", "Pfam") == "JOBID"
-    interpro._result_types("JOBID")
-    interpro._fetch_result("JOBID", "tsv")
+    base = interpro.IPRSCAN_ENDPOINTS[5]
+    assert interpro._submit(base, "e@x.z", ">s\nACD", ["Pfam"]) == "JOBID"
+    interpro._result_types(base, "JOBID")
+    interpro._fetch_result(base, "JOBID", "tsv")
     assert calls["post"] == 1
     assert calls["get"] == 2
 
@@ -242,9 +243,9 @@ def test_run_api_raises_when_a_chunk_does_not_finish(tmp_path, monkeypatch):
     # A chunk that times out / fails leaves its sequences unannotated; confirm would
     # then drop those members silently. The stage must stop instead.
     monkeypatch.setattr(interpro, "_submit", lambda *a, **k: "JOB1")
-    monkeypatch.setattr(interpro, "_poll", lambda job_id: "TIMEOUT")
-    monkeypatch.setattr(interpro, "_result_types", lambda job_id: ["tsv", "gff"])
-    monkeypatch.setattr(interpro, "_fetch_result", lambda job_id, rt: "")
+    monkeypatch.setattr(interpro, "_poll", lambda *a, **k: "TIMEOUT")
+    monkeypatch.setattr(interpro, "_result_types", lambda *a, **k: ["tsv", "gff"])
+    monkeypatch.setattr(interpro, "_fetch_result", lambda *a, **k: "")
 
     import pytest
     with pytest.raises(RuntimeError, match="did not finish"):
@@ -254,9 +255,9 @@ def test_run_api_raises_when_a_chunk_does_not_finish(tmp_path, monkeypatch):
 def test_run_api_raises_when_finished_job_has_no_tsv(tmp_path, monkeypatch):
     # FINISHED but no TSV result type is the same silent-drop, so it is also fatal.
     monkeypatch.setattr(interpro, "_submit", lambda *a, **k: "JOB1")
-    monkeypatch.setattr(interpro, "_poll", lambda job_id: "FINISHED")
-    monkeypatch.setattr(interpro, "_result_types", lambda job_id: ["gff"])   # no tsv
-    monkeypatch.setattr(interpro, "_fetch_result", lambda job_id, rt: "")
+    monkeypatch.setattr(interpro, "_poll", lambda *a, **k: "FINISHED")
+    monkeypatch.setattr(interpro, "_result_types", lambda *a, **k: ["gff"])   # no tsv
+    monkeypatch.setattr(interpro, "_fetch_result", lambda *a, **k: "")
 
     import pytest
     with pytest.raises(RuntimeError, match="no 'tsv' result type"):
@@ -266,30 +267,37 @@ def test_run_api_raises_when_finished_job_has_no_tsv(tmp_path, monkeypatch):
 def test_run_api_succeeds_when_all_chunks_finish(tmp_path, monkeypatch):
     # The happy path still returns the annotations; a missing GFF is only a warning.
     monkeypatch.setattr(interpro, "_submit", lambda *a, **k: "JOB1")
-    monkeypatch.setattr(interpro, "_poll", lambda job_id: "FINISHED")
-    monkeypatch.setattr(interpro, "_result_types", lambda job_id: ["tsv"])   # no gff
+    monkeypatch.setattr(interpro, "_poll", lambda *a, **k: "FINISHED")
+    monkeypatch.setattr(interpro, "_result_types", lambda *a, **k: ["tsv"])   # no gff
     row = "P0\tmd5\t9\tPfam\tPF00139\td\t1\t9\t1e-9\tT\tdate\tIPR\td"
-    monkeypatch.setattr(interpro, "_fetch_result", lambda job_id, rt: row)
+    monkeypatch.setattr(interpro, "_fetch_result", lambda *a, **k: row)
+    # Avoid a real XML fetch for the per-chunk version; keep it a single version.
+    monkeypatch.setattr(interpro, "_job_version", lambda *a, **k: "5.78-109.0")
 
-    lines, gff_texts = interpro._run_api(_api_cfg(tmp_path), _write_cand_fasta(tmp_path, 1))
+    lines, gff_texts, meta = interpro._run_api(_api_cfg(tmp_path), _write_cand_fasta(tmp_path, 1))
     assert lines == [row]
     assert gff_texts == []
+    assert meta["interproscan_versions"] == ["5.78-109.0"]
 
 
-def test_run_api_keeps_one_job_in_flight_at_a_time(tmp_path, monkeypatch):
-    # EBI Job Dispatcher fair-use: only one job open per species at a time, so each
-    # submit is immediately followed by its own poll (submit, poll, submit, poll,
-    # ...) -- never all chunks submitted up front. This is what keeps several
-    # species running in parallel within EBI's concurrent-job limit.
+def test_run_api_submits_in_waves_then_polls(tmp_path, monkeypatch):
+    # EBI Job Dispatcher fair-use: jobs run in WAVES of at most MAX_CONCURRENT_JOBS.
+    # Each wave is submitted together, then every job in it is polled/fetched before
+    # the next wave is submitted -- this caps a species' concurrent jobs so several
+    # species stay within EBI's limit while still overlapping jobs for speed.
     order = []
     ids = iter([f"JOB{i}" for i in range(10)])
+    monkeypatch.setattr(interpro, "CHUNK_SIZE", 30)          # small chunks for the test
+    monkeypatch.setattr(interpro, "MAX_CONCURRENT_JOBS", 2)  # small waves for the test
     monkeypatch.setattr(interpro.time, "sleep", lambda s: None)   # no real spacing
     monkeypatch.setattr(interpro, "_submit", lambda *a, **k: (order.append("submit"), next(ids))[1])
-    monkeypatch.setattr(interpro, "_poll", lambda job_id: (order.append("poll"), "FINISHED")[1])
-    monkeypatch.setattr(interpro, "_result_types", lambda job_id: ["tsv", "gff"])
+    monkeypatch.setattr(interpro, "_poll", lambda *a, **k: (order.append("poll"), "FINISHED")[1])
+    monkeypatch.setattr(interpro, "_result_types", lambda *a, **k: ["tsv", "gff"])
     monkeypatch.setattr(interpro, "_fetch_result",
-                        lambda job_id, rt: "P\tmd5\t9\tPfam\tPF1\td\t1\t9\t1e-9\tT\td\tIPR\td")
+                        lambda *a, **k: "P\tmd5\t9\tPfam\tPF1\td\t1\t9\t1e-9\tT\td\tIPR\td")
+    monkeypatch.setattr(interpro, "_job_version", lambda *a, **k: "5.78-109.0")
 
-    # 65 sequences -> 3 chunks (30, 30, 5).
+    # 65 sequences, CHUNK_SIZE 30 -> 3 chunks; MAX_CONCURRENT_JOBS 2 -> waves [2, 1]:
+    # submit both of wave 1, poll both, then submit + poll wave 2.
     interpro._run_api(_api_cfg(tmp_path), _write_cand_fasta(tmp_path, 65))
-    assert order == ["submit", "poll", "submit", "poll", "submit", "poll"]
+    assert order == ["submit", "submit", "poll", "poll", "submit", "poll"]

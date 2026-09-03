@@ -6,7 +6,7 @@
 #                                                                                                    #
 # Runs after compile. Calls the bundled R/ggplot2 script on final_results/gwiscan_results.tsv.       #
 # The FIGURES (faceted 600 dpi PNG/TIFF + PDF boxplots) go to final_results/figures/; the per-family #
-# stats table and the Tukey-outlier list are intermediate working files, written to intermediate/.   #
+# stats table is an intermediate working file, written to intermediate/.                             #
 # Optional: needs Rscript on PATH; if it isn't installed the `run` stage auto-skips.                 #
 #                                                                                                    #
 ######################################################################################################
@@ -36,12 +36,12 @@ def run(cfg: Config) -> None:
 
     # The R script reads gwiscan_results.tsv from the working directory (run inside
     # final_results/, per species in multi-species mode) and writes the boxplot
-    # images into its figures/ subfolder. The stats + outlier tables are intermediate,
-    # so intermediate/protparam/ is passed as the first argument for those.
+    # images into its figures/ subfolder. The stats table is an intermediate file,
+    # so intermediate/protparam/ is passed as the first argument for it.
     cfg.protparam_dir.mkdir(parents=True, exist_ok=True)
     external.log(f"[figures] Rendering ProtParam distributions from {results.name}...")
     external.run([cfg.RSCRIPT_BIN, "--vanilla", str(_R_SCRIPT), str(cfg.protparam_dir)],
                  cwd=cfg.final_dir)
     external.log("[OK] ProtParam boxplots -> final_results/figures/ "
-                 "(protparam_boxplots.*); stats + outliers -> intermediate/protparam/ "
-                 "(protparam_stats.csv, protparam_outliers.csv)")
+                 "(protparam_boxplots.*); stats -> intermediate/protparam/ "
+                 "(protparam_stats.csv)")

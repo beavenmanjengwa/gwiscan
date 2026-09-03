@@ -28,12 +28,12 @@ def test_config_file_then_override(tmp_path):
     (tmp_path / "config.yaml").write_text(textwrap.dedent("""
         THREADS: 16
         DIAMOND_EVALUE: "1e-10"
-        INTERPRO_APPL: "Pfam,SMART"
+        INTERPRO_MODE: "local"
     """))
     cfg = Config.load(root=tmp_path)
     assert cfg.THREADS == 16
     assert cfg.DIAMOND_EVALUE == "1e-10"
-    assert cfg.INTERPRO_APPL == "Pfam,SMART"
+    assert cfg.INTERPRO_MODE == "local"
 
     # CLI overrides win over the config file; None values are ignored.
     cfg2 = Config.load(root=tmp_path, overrides={"THREADS": 32, "DIAMOND_EVALUE": None})

@@ -28,7 +28,7 @@ from datetime import datetime
 
 from Bio import SeqIO
 
-from . import external, io
+from . import external, hmm, io
 from .config import Config
 from .schema import HIT_HEADER
 
@@ -168,13 +168,13 @@ def _parse_domtbl(path):
 
 
 def _hmmsearch(cfg: Config, hmm_db, query_fasta, tag):
-    """Run hmmsearch (the hmm_db profiles vs the query_fasta sequences) with Pfam
-    gathering thresholds; return the domtbl path. hmmsearch saturates the cores,
-    unlike hmmscan, on a genome-wide search."""
+    """Run hmmsearch (the hmm_db profiles vs the query_fasta sequences) with the run's
+    cutoff (Pfam GA thresholds by default, or -E when HMM_EVALUE is set); return the
+    domtbl path. hmmsearch saturates the cores, unlike hmmscan, on a genome-wide search."""
     domtbl = cfg.result(f"arch_{tag}_domtbl.txt")
     external.log(f"[{datetime.now()}] hmmsearch ({tag}) ...")
     external.run([
-        "hmmsearch", "--cut_ga", "--noali", "--cpu", cfg.THREADS,
+        "hmmsearch", *hmm.threshold_args(cfg), "--noali", "--cpu", cfg.THREADS,
         "--domtblout", domtbl,
         "-o", cfg.result(f"arch_{tag}.out"),
         hmm_db, query_fasta,

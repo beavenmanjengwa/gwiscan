@@ -1,5 +1,5 @@
 {% set name = "gwiscan" %}
-{% set version = "1.1.0" %}
+{% set version = "1.2.0" %}
 
 package:
   name: {{ name|lower }}
@@ -31,7 +31,7 @@ requirements:
     - openpyxl >=3.1
     - requests >=2.28
     - pyyaml >=6.0
-    - setuptools           # provides pkg_resources, imported by weblogo (not bundled on Python >=3.12)
+    - setuptools
     - hmmer
     - diamond
     - seqkit
@@ -56,12 +56,12 @@ about:
   home: https://github.com/beavenmanjengwa/gwiscan
   license: MIT
   license_file: LICENSE
-  summary: GWIscan is a pipeline for the genome-wide identification and annotation of gene families.
+  summary: GWIscan is a pipeline for the genome-wide identification and in silico characterization of gene families.
   description: |
-    GWIscan is a pipeline for the genome-wide identification and annotation of gene
-    families. It combines BLAST, profile hidden Markov models, and InterProScan for
-    identification. It runs in family, multi-family, or architecture modes, on a
-    single proteome or across multiple species.
+    GWIscan is a pipeline for the genome-wide identification and in silico characterization of gene families. 
+    It combines homology-based search, profile hidden Markov model search, and InterPro family signatures for 
+    identification. It runs in family, multi-family, or architecture modes, on a single proteome or across 
+    multiple species.
   dev_url: https://github.com/beavenmanjengwa/gwiscan
 
 extra:

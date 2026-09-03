@@ -1,29 +1,181 @@
+# GWIscan configuration. Every setting is optional; unset keys use the built-in
+# default shown here. Order: defaults < config.yaml < environment (GWISCAN_<KEY>)
+# < CLI flag. List stage keys with: gwiscan run --list-stages
+
+# --- General ---
+
+# Worker threads / CPUs per species.
 THREADS: 4
-OUTPUT: ""                     # where results/ and logs/ go; empty = the project dir (-C). CLI: -o/--output
-MODE: family                   # "family" (flat), "superfamily" (adds a Superfamily rollup; family map needs a Superfamily column), or "architecture" (domain-combination: primary + required Pfam domains via two-pass hmmscan; rules in config/architecture.tsv)
-SPECIES_PARALLEL: 0            # multi-species: concurrent species. 0 = auto (cores // THREADS); N = exactly N at once
-SERIAL_STAGES: [deeptmhmm, targetp, deeploc]  # resource-bound stages run one species at a time
-STAGE_PARALLEL: {}             # optional per-stage override, e.g. {deeptmhmm: 2}
+
+# Where results/ and logs/ go; empty = the project dir (-C). CLI: -o/--output
+OUTPUT: "projectDir"
+
+# "family" (flat), "multi-family" (adds a Multifamily rollup; family map needs a
+# Multifamily column), or "architecture" (domain-combination: primary + required
+# Pfam domains via two-pass hmmscan; rules in config/architecture.tsv).
+MODE: family
+
+# Input proteome is one protein per gene; false only if it still has isoforms.
+PRIMARY_TRANSCRIPT: true
+
+# Genome annotation (GTF/GFF3) for the coords stage; empty = look for
+# input/annotation.{gtf,gff3,gff}. Absent entirely = the coords stage is skipped.
+ANNOTATION: ""
+
+# --- Multi-species ---
+
+# Concurrent species. 0 = auto (cores // THREADS); N = exactly N at once.
+SPECIES_PARALLEL: 0
+
+# Resource-bound stages that run one species at a time.
+SERIAL_STAGES: [deeptmhmm, targetp, deeploc]
+
+# Optional per-stage concurrency override, e.g. {deeptmhmm: 2}.
+STAGE_PARALLEL: {}
+
+# Prefix for systematic domain ids, e.g. "Ath" gives AthGNA001.1.
+SPECIES_PREFIX: ""
+
+# --- HMM search (hmmsearch) ---
+
+# Empty (default) uses the per-model cutoff (HMM_CUTOFF); or set a sequence E-value (e.g. "1e-5").
+HMM_EVALUE: ""
+
+# Model cutoff when HMM_EVALUE is empty: ga (default), tc (stricter), nc (looser).
+HMM_CUTOFF: "ga"
+
+# --- DIAMOND (two-round BLASTp) ---
+
+# Both rounds: E-value cutoff.
 DIAMOND_EVALUE: "1e-5"
-DIAMOND_IDENTITY: 30           # round 2 min % identity (native seeds); round 1 is --very-sensitive, E-value only
-DIAMOND_COVERAGE_R2: 70        # round 2 query coverage % (native seeds)
-DIAMOND_SENSITIVE_R2: false    # round 2 --sensitive; default off (native-to-native)
-DIAMOND_BSR: 0.4               # round-2 seeds for no-HMM families: Blast Score Ratio cutoff (HMM families use hmmscan-validated seeds)
-CONCORDANCE_MIN: 0.7           # score stage: Jaccard at/above which a family is "concordant" (hmmscan vs independent DIAMOND round 1)
-PRIMARY_TRANSCRIPT: true       # input proteome is one protein per gene; false only if it still has isoforms
-EBI_EMAIL: ""                  # REQUIRED — InterProScan always runs; set here or export EBI_EMAIL
-INTERPRO_APPL: "Pfam,CDD,ProSiteProfiles"  # InterProScan member db(s); Pfam drives architecture, CDD+PROSITE enrich
-INTERPRO_MODE: "api"           # "api" (EBI REST, needs EBI_EMAIL) or "local" (installed interproscan.sh)
-INTERPROSCAN_BIN: "interproscan.sh"  # local mode: install InterProScan system-wide (on PATH) so this name resolves; full path only for a non-PATH install
-INTERPRO_LOOKUP: false         # local mode: use the online precalc lookup; false = fully offline (-dp)
-PROTPARAM_FORMATS: [tsv, xlsx] # ProtParam outputs; any of tsv, xlsx, csv (tsv feeds the join)
-SPECIES_PREFIX: ""             # e.g. "Ath" — prefixes systematic domain ids (AthGNA001.1)
-TARGETP_BIN: "targetp-2.0"     # PATH name, path to executable, or install dir (uses <dir>/bin/targetp); academic download
-TARGETP_ORGANISM: "pl"         # plant; -org pl / -format short are fixed defaults for this pipeline
-DEEPLOC_BIN: "deeploc-2.1"     # PATH name or absolute path; DeepLoc 2.1 is a user-installed academic download
-DEEPLOC_MODEL: "Accurate"      # Accurate (ProtT5, ~32GB RAM) or Fast (ESM1b, lighter)
-DEEPTMHMM_VERSION: "1.0.24"    # 1.0.24 runs locally & fast; newer tags queue on biolib cloud
-IQTREE_BIN: "iqtree"          # per-family ML trees; install: conda install bioconda::iqtree (on PATH)
-IQTREE_MODEL: "MFP"            # ModelFinder Plus (auto model selection)
-IQTREE_BOOTSTRAP: 1000         # ultrafast bootstrap replicates (-B); 0 = no bootstrap
-IQTREE_SEED: 12345             # RNG seed (-seed) so trees/support values are reproducible
+
+# Sensitivity mode for both rounds: fast, mid-sensitive, sensitive, more-sensitive,
+# very-sensitive, ultra-sensitive. ultra-sensitive (default) matches NCBI BLASTP.
+DIAMOND_SENSITIVITY: ultra-sensitive
+
+# Round-2 seed cutoff (every family): Blast Score Ratio = bitscore / model self-bitscore.
+DIAMOND_BSR: 0.15
+
+# Score stage: Jaccard at/above which a family is labeled concordant (hmmsearch vs DIAMOND BLAST).
+CONCORDANCE_MIN: 0.7
+
+# --- InterProScan (domain + GO annotation) ---
+
+# REQUIRED (InterProScan always runs): set here or export EBI_EMAIL.
+EBI_EMAIL: ""
+
+# "api" (EBI REST, needs EBI_EMAIL) or "local" (installed interproscan.sh).
+INTERPRO_MODE: "api"
+
+# api mode: EBI InterProScan REST version, 5 (default, stable) or 6. App names map
+# automatically (v5 PfamA/Panther, v6 Pfam/PANTHER); v6 lookup is currently not stable
+# server-side. CLI: --iprscan-version
+IPRSCAN_VERSION: 5
+
+# local mode: install InterProScan system-wide (on PATH) so this name resolves;
+# full path only for a non-PATH install.
+INTERPROSCAN_BIN: "interproscan.sh"
+
+# local mode: use the online precalc lookup; false = fully offline (-dp).
+INTERPRO_LOOKUP: false
+
+# --- ProtParam (physicochemical properties) ---
+
+# Outputs; any of tsv, xlsx, csv (tsv feeds the join).
+PROTPARAM_FORMATS: [tsv, xlsx]
+
+# --- TargetP (signal / transit peptides) ---
+
+# PATH name, path to executable, or install dir (uses <dir>/bin/targetp); academic download.
+TARGETP_BIN: "targetp-2.0"
+
+# Plant; -org pl / -format short are fixed defaults for this pipeline.
+TARGETP_ORGANISM: "pl"
+
+# --- DeepLoc (subcellular localization) ---
+
+# PATH name or absolute path; DeepLoc 2.1 is a user-installed academic download.
+DEEPLOC_BIN: "deeploc-2.1"
+
+# Accurate (ProtT5, ~32GB RAM) or Fast (ESM1b, lighter).
+DEEPLOC_MODEL: "Accurate"
+
+# --- DeepTMHMM (transmembrane topology) ---
+
+# How it runs: "biolib" (the pybiolib CLI, default) or "local" (a standalone
+# academic install; set DEEPTMHMM_DIR and DEEPTMHMM_PYTHON below).
+DEEPTMHMM_MODE: "biolib"
+
+# biolib mode: pinned app version. 1.0.24 runs locally & fast; newer tags queue on
+# biolib cloud.
+DEEPTMHMM_VERSION: "1.0.24"
+
+# local mode: the standalone DeepTMHMM directory (predict.py + deeptmhmm_cv_*.model),
+# and a Python that can run predict.py. Ignored in biolib mode.
+DEEPTMHMM_DIR: ""
+DEEPTMHMM_PYTHON: ""
+
+# --- MSA (MAFFT) ---
+
+# Alignment strategy: auto (default, MAFFT picks by size), linsi / ginsi / einsi
+# (accurate L/G/E-INS-i for divergent sets), or fftns2 (fast, large sets).
+MAFFT_ALGORITHM: "auto"
+
+# --- Trimming (ClipKIT; feeds the trees only) ---
+
+# Trimming mode: smart-gap (default), gappy, kpic, kpic-smart-gap, ...
+CLIPKIT_MODE: "smart-gap"
+
+# Gap threshold for the gappy modes; empty = ClipKIT default 0.9.
+CLIPKIT_GAPS: ""
+
+CLIPKIT_BIN: "clipkit"
+
+# --- MEME (motif discovery) ---
+
+# Number of motifs per family.
+MEME_NMOTIFS: 15
+
+# Motif width bounds; empty = MEME's own defaults (min 6, max 50).
+MEME_MINW: ""
+MEME_MAXW: ""
+
+MEME_BIN: "meme"
+
+# --- WebLogo (conservation logos) ---
+
+WEBLOGO_BIN: "weblogo"
+
+# --- IQ-TREE (per-family ML trees; off by default, enable with --add iqtree) ---
+
+# install: conda install bioconda::iqtree (on PATH).
+IQTREE_BIN: "iqtree"
+
+# ModelFinder Plus (auto model selection).
+IQTREE_MODEL: "MFP"
+
+# Ultrafast bootstrap replicates (-B); 0 = no bootstrap.
+IQTREE_BOOTSTRAP: 1000
+
+# RNG seed (-seed) so trees/support values are reproducible.
+IQTREE_SEED: 12345
+
+# --- Figures (R) ---
+
+RSCRIPT_BIN: "Rscript"
+
+# --- Stage control (usually CLI, but settable here) ---
+#   FROM_STAGE   resume from this stage onward (its inputs must already be on disk)
+#   UNTIL_STAGE  stop after this stage (inclusive)
+#   SKIP_STAGES  drop these stages and keep going (e.g. an optional tool you don't
+#                have installed), instead of aborting the run
+#   ADD_STAGES   turn on stages that are off by default: trim, iqtree
+# Empty = run every default stage. Examples (uncomment to use):
+#   SKIP_STAGES: [weblogo, meme, iqtree]   # skip the optional phylogeny/logo tools
+#   FROM_STAGE: interpro                    # re-run from the interpro stage onward
+#   UNTIL_STAGE: compile                    # stop once the final tables are built
+#   ADD_STAGES: [iqtree]                    # also build per-family ML trees
+FROM_STAGE: ""
+UNTIL_STAGE: ""
+SKIP_STAGES: []
+ADD_STAGES: []

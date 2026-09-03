@@ -101,20 +101,27 @@ DEFAULTS = {
     #                    co-occurrence of the component domains is the criterion, so no
     #                    DIAMOND and no InterProScan. Rules live in architecture.tsv.
     "MODE": "family",
+    # HMM search cutoff. Empty (default) uses each model's Pfam GA (gathering)
+    # thresholds (hmmsearch --cut_ga). Set an E-value (e.g. "1e-5") to use a
+    # sequence E-value cutoff instead (hmmsearch -E) -- this also allows custom
+    # HMMs that carry no GA line, and a more sensitive, exploratory search.
+    "HMM_EVALUE": "",
+    # Which Pfam per-model bit-score cutoff hmmsearch applies when HMM_EVALUE is unset:
+    # "ga" (gathering, the balanced default), "tc" (trusted, strictest) or "nc" (noise,
+    # loosest). Maps to hmmsearch --cut_ga / --cut_tc / --cut_nc. Every identifying
+    # model must declare the chosen line; HMM_EVALUE overrides this to an E-value.
+    "HMM_CUTOFF": "ga",
     "DIAMOND_EVALUE": "1e-5",
-    "DIAMOND_IDENTITY": 30,        # round 2 min % identity (native seeds; round 1 is E-value only)
-    "DIAMOND_COVERAGE_R2": 70,     # round 2 query coverage % (native seeds)
     # DIAMOND sensitivity mode for both search rounds. One of fast, mid-sensitive,
     # sensitive, more-sensitive, very-sensitive, ultra-sensitive. ultra-sensitive
     # (default) matches NCBI BLASTP sensitivity; "fast" runs DIAMOND's default mode.
     "DIAMOND_SENSITIVITY": "ultra-sensitive",
-    # Round-2 seeds: HMM-validated (round-1 hits that also pass hmmscan) when a
-    # family has an HMM; otherwise Blast Score Ratio -- keep round-1 subjects whose
+    # Round-2 seeds (every family): Blast Score Ratio -- keep round-1 subjects whose
     # bitscore / model self-bitscore >= this (length-normalized, Rasko et al. 2005).
-    "DIAMOND_BSR": 0.4,
+    "DIAMOND_BSR": 0.15,
     # Per-family detectability (score stage): a family counts as "concordant" when
-    # hmmscan and the independent DIAMOND round 1 agree at least this much
-    # (Jaccard). Reporting cutoff only -- the raw metrics are always written.
+    # hmmsearch and DIAMOND BLAST agree at least this much (Jaccard). Reporting
+    # cutoff only -- the raw metrics are always written.
     "CONCORDANCE_MIN": 0.7,
     # The input proteome is one protein per gene (primary transcript). Default
     # true — that is the expected input. Set false only if your proteome still
@@ -128,14 +135,20 @@ DEFAULTS = {
     "ANNOTATION": "",
     "PRIMARY_TRANSCRIPT": True,
     "EBI_EMAIL": "",
-    # InterProScan 6 member database(s), comma-separated. Default Pfam + CDD;
-    # InterProScan runs all requested DBs on the small candidate set for the full
-    # domain architecture + GO. Add more (SMART, ProSiteProfiles, SUPERFAMILY, ...).
-    "INTERPRO_APPL": "Pfam,CDD,ProSiteProfiles",
     # How InterProScan runs:
-    #   "api"   — EBI InterProScan 6 REST API (needs EBI_EMAIL, internet).
+    #   "api"   — EBI InterProScan REST API (needs EBI_EMAIL, internet).
     #   "local" — a local install (INTERPROSCAN_BIN), offline-capable, no email.
     "INTERPRO_MODE": "api",
+    # Which EBI InterProScan REST API to submit to (api mode): 5 (default) or 6.
+    #   5 — InterProScan 5, the stable service. DEFAULT.
+    #   6 — InterProScan 6. Its Matches-API lookup step has a known server-side
+    #       defect ("Null key for a Map", modules/lookup/main.nf) that fails every
+    #       job; the interpro stage detects it and tells you to rerun with 5.
+    # v5 and v6 use DIFFERENT application names for the SAME databases (v5 wants
+    # PfamA/Panther, v6 wants Pfam/PANTHER); GWIscan derives its canonical names
+    # from the family table and maps them to the chosen version automatically, so
+    # never hand-mix v5 and v6 application names. See features/interpro.py.
+    "IPRSCAN_VERSION": 5,
     # Local mode: install InterProScan system-wide (on PATH) so "interproscan.sh"
     # resolves by name and no directory has to be given. Set a full path here only
     # for a non-PATH install.
@@ -173,9 +186,18 @@ DEFAULTS = {
     # Prefix for systematic domain ids (e.g. "Ath" -> AthGNA001.1). One species
     # per run, so this is a single constant that keeps ids unique across runs.
     "SPECIES_PREFIX": "",
-    # MEME motif discovery: number of motifs per family. Everything else uses
-    # MEME's own defaults.
+    # MAFFT alignment strategy (msa stage). A preset name mapped to MAFFT's flags:
+    #   auto (default) lets MAFFT pick by input size; linsi / ginsi / einsi are the
+    #   accurate iterative-refinement strategies (L/G/E-INS-i) for divergent sets;
+    #   fftns2 is the fast progressive strategy for large sets. Width/accuracy of the
+    #   alignment feeds directly into trees and logos, so it is worth choosing.
+    "MAFFT_ALGORITHM": "auto",
+    # MEME motif discovery. MEME_NMOTIFS = number of motifs per family. MEME_MINW /
+    # MEME_MAXW bound the motif width (MEME's own defaults, 6 and 50, when empty);
+    # width bounds shape what MEME finds as much as the motif count does.
     "MEME_NMOTIFS": 15,
+    "MEME_MINW": "",
+    "MEME_MAXW": "",
     # Optional-tool executables, like TARGETP_BIN/DEEPLOC_BIN/IQTREE_BIN: a PATH
     # name (resolved by name) or an absolute path to the binary. So WebLogo/MEME can
     # live in a separate conda env without being on the PATH `gwiscan` runs from.
@@ -183,11 +205,15 @@ DEFAULTS = {
     "MEME_BIN": "meme",
     # ClipKIT trims each MAFFT alignment before tree-building. CLIPKIT_MODE is the
     # column-filter mode (smart-gap [default], gappy, kpic, kpic-smart-gap, ...);
-    # smart-gap is a gentle, gap-aware filter. Only IQ-TREE uses the trimmed
-    # alignment (WebLogo/MEME keep the full one). Optional -- if ClipKIT isn't
-    # installed the `trim` stage is skipped and iqtree uses the untrimmed alignment.
+    # smart-gap is a gentle, gap-aware filter. CLIPKIT_GAPS is the gap threshold the
+    # gappy modes use (ClipKIT default 0.9 when empty): the fraction of gaps at or
+    # above which a column is trimmed. Trimming stringency changes tree topology, so
+    # both are exposed. Only IQ-TREE uses the trimmed alignment (WebLogo/MEME keep
+    # the full one). Optional -- if ClipKIT isn't installed the `trim` stage is
+    # skipped and iqtree uses the untrimmed alignment.
     "CLIPKIT_BIN": "clipkit",
     "CLIPKIT_MODE": "smart-gap",  # clipkit -m mode (smart-gap, gappy, kpic, kpic-smart-gap, ...)
+    "CLIPKIT_GAPS": "",           # clipkit -g gap threshold for gappy modes (default 0.9)
     # IQ-TREE per-family phylogenetic trees. Install via conda so iqtree is on
     # PATH: conda install bioconda::iqtree
     # ProtParam distribution figures + stats (figures stage). Runs the bundled
@@ -248,8 +274,6 @@ DEFAULTS = {
 _CASTERS = {
     "THREADS": int,
     "VERBOSE": _to_bool,
-    "DIAMOND_IDENTITY": int,
-    "DIAMOND_COVERAGE_R2": int,
     "DIAMOND_BSR": float,
     "CONCORDANCE_MIN": float,
     "PRIMARY_TRANSCRIPT": _to_bool,
@@ -257,6 +281,7 @@ _CASTERS = {
     "MEME_NMOTIFS": int,
     "SPECIES_PARALLEL": int,
     "INTERPRO_LOOKUP": _to_bool,
+    "IPRSCAN_VERSION": int,
     "IQTREE_BOOTSTRAP": int,
     "IQTREE_SEED": int,
     "SKIP_STAGES": _csv_list,
@@ -282,17 +307,17 @@ class Config:
     VERBOSE: bool = False
     OUTPUT: str = ""
     MODE: str = "family"
+    HMM_EVALUE: str = ""
+    HMM_CUTOFF: str = "ga"
     DIAMOND_EVALUE: str = "1e-5"
-    DIAMOND_IDENTITY: int = 30
-    DIAMOND_COVERAGE_R2: int = 70
     DIAMOND_SENSITIVITY: str = "ultra-sensitive"
-    DIAMOND_BSR: float = 0.4
+    DIAMOND_BSR: float = 0.15
     CONCORDANCE_MIN: float = 0.7
     ANNOTATION: str = ""
     PRIMARY_TRANSCRIPT: bool = True
     EBI_EMAIL: str = ""
-    INTERPRO_APPL: str = "Pfam,CDD,ProSiteProfiles"
     INTERPRO_MODE: str = "api"
+    IPRSCAN_VERSION: int = 5
     INTERPROSCAN_BIN: str = "interproscan.sh"
     INTERPRO_LOOKUP: bool = False
     GO_OBO_URL: str = "https://purl.obolibrary.org/obo/go/go-basic.obo"
@@ -306,11 +331,15 @@ class Config:
     DEEPTMHMM_PYTHON: str = ""
     PROTPARAM_FORMATS: list = field(default_factory=lambda: ["tsv", "xlsx"])
     SPECIES_PREFIX: str = ""
+    MAFFT_ALGORITHM: str = "auto"
     MEME_NMOTIFS: int = 15
+    MEME_MINW: str = ""
+    MEME_MAXW: str = ""
     WEBLOGO_BIN: str = "weblogo"
     MEME_BIN: str = "meme"
     CLIPKIT_BIN: str = "clipkit"
     CLIPKIT_MODE: str = "smart-gap"
+    CLIPKIT_GAPS: str = ""
     RSCRIPT_BIN: str = "Rscript"
     IQTREE_BIN: str = "iqtree"
     IQTREE_MODEL: str = "MFP"
@@ -474,7 +503,7 @@ class Config:
     @property
     def protparam_dir(self) -> Path:
         """intermediate/<species>/protparam/ — every ProtParam working file (the
-        table, and the figures stage's stats + outlier CSVs) grouped in one folder."""
+        table, and the figures stage's stats CSV) grouped in one folder."""
         return self.results / "protparam"
 
     def ensure_dirs(self) -> None:

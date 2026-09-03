@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-####################################################################################################
-#                                                                                                  #
+#####################################################################################################
+#                                                                                                   #
 # hmm.py - hmmsearch against the HMM database and domtbl parsing (the `search-hmm` stage).          #
-#                                                                                                  #
+#                                                                                                   #
 # Uses hmmsearch (the profiles are the query, the proteome the target DB): far faster than hmmscan  #
 # for a genome-wide search and it saturates the cores. In hmmsearch --domtblout the target is the   #
 # protein and the query is the HMM, so column 1 is the protein id and columns 4-5 the HMM name/acc. #
 # The column indices below are named accordingly and covered by tests/test_hmm_parse.py.            #
-#                                                                                                  #
-####################################################################################################
+#                                                                                                   #
+#####################################################################################################
 """
 
 from __future__ import annotations
@@ -21,40 +21,97 @@ from . import external, io
 from .config import Config
 from .schema import HIT_HEADER
 
-# A GA (gathering) threshold line in an HMMER profile header, e.g. "GA  27.0 27.0;".
-_GA_RE = re.compile(r"^GA\s")
-
-# Guidance shown when a custom identifying HMM lacks GA thresholds. Kept in one
-# place so preflight and setup-db give the user the same, correct instructions.
-GA_THRESHOLD_HELP = (
-    "The HMM search runs `hmmsearch --cut_ga`, which applies each model's own GA "
-    "(gathering) cutoff, so every identifying model must declare one. A profile from "
-    "hmmbuild has no GA line unless its source alignment carried one. Add a GA cutoff "
-    "to the profile (build it from a Stockholm alignment with a `#=GF GA <seq> <dom>` "
-    "line, or insert a `GA  <seq> <dom>;` line into the .hmm header), or identify this "
-    "family by a Pfam accession instead."
-)
+# Pfam's three curated per-model bit-score cutoffs, any of which hmmsearch can use
+# with --cut_<kind>: GA (gathering, the balanced default), TC (trusted, strictest:
+# the weakest included member), NC (noise, loosest: the best excluded non-member).
+_CUTOFF_NAMES = {"ga": "gathering", "tc": "trusted", "nc": "noise"}
 
 
-def has_ga_thresholds(hmm_path) -> bool:
-    """True when every model in an HMMER profile file declares a GA threshold.
+def cutoff_kind(cfg) -> str:
+    """The model cutoff the run uses (HMM_CUTOFF): 'ga' (default), 'tc' or 'nc'.
+    Ignored when HMM_EVALUE is set (that switches to an E-value cutoff instead)."""
+    kind = str(getattr(cfg, "HMM_CUTOFF", "ga") or "ga").strip().lower()
+    if kind not in _CUTOFF_NAMES:
+        raise RuntimeError(
+            f"invalid HMM_CUTOFF {getattr(cfg, 'HMM_CUTOFF', '')!r}; use ga, tc or nc "
+            f"(gathering / trusted / noise)."
+        )
+    return kind
 
-    An .hmm file may hold several concatenated models; ``hmmsearch --cut_ga`` aborts
-    the whole search if any one of them lacks a GA cutoff, so this requires one GA
-    line per model (and at least one model)."""
-    n_models = n_ga = 0
+
+def cutoff_help(kind: str) -> str:
+    """Guidance shown when a custom identifying HMM lacks the chosen cutoff line.
+    Kept in one place so preflight and setup-db give identical instructions."""
+    tag, name = kind.upper(), _CUTOFF_NAMES[kind]
+    return (
+        f"The HMM search runs `hmmsearch --cut_{kind}`, which applies each model's own "
+        f"{tag} ({name}) cutoff, so every identifying model must declare one. A profile "
+        f"from hmmbuild has no {tag} line unless its source alignment carried one. Add a "
+        f"{tag} cutoff to the profile (build it from a Stockholm alignment with a "
+        f"`#=GF {tag} <seq> <dom>` line, or insert a `{tag}  <seq> <dom>;` line into the "
+        f".hmm header), or identify this family by a Pfam accession instead."
+    )
+
+
+# Back-compat: the GA-specific help constant other code/tests reference.
+GA_THRESHOLD_HELP = cutoff_help("ga")
+
+
+def has_cutoff_thresholds(hmm_path, kind: str = "ga") -> bool:
+    """True when every model in an HMMER profile file declares the given cutoff line
+    (GA/TC/NC).
+
+    An .hmm file may hold several concatenated models; ``hmmsearch --cut_<kind>``
+    aborts the whole search if any one of them lacks that cutoff, so this requires
+    one such line per model (and at least one model)."""
+    line_re = re.compile(rf"^{kind.upper()}\s")
+    n_models = n_cut = 0
     with open(hmm_path, encoding="utf-8", errors="ignore") as fh:
         for line in fh:
             if line.startswith("HMMER3/"):     # each model begins with the format line
                 n_models += 1
-            elif _GA_RE.match(line):
-                n_ga += 1
-    return n_models >= 1 and n_ga == n_models
+            elif line_re.match(line):
+                n_cut += 1
+    return n_models >= 1 and n_cut == n_models
+
+
+def has_ga_thresholds(hmm_path) -> bool:
+    """True when every model declares a GA threshold (has_cutoff_thresholds for GA)."""
+    return has_cutoff_thresholds(hmm_path, "ga")
+
+
+def threshold_args(cfg) -> list:
+    """The hmmsearch reporting/inclusion cutoff for this run: a model cutoff line by
+    default (``--cut_ga`` / ``--cut_tc`` / ``--cut_nc``, per HMM_CUTOFF), or a
+    sequence E-value (``-E``) when HMM_EVALUE is set. A model cutoff requires every
+    model to declare that line; an E-value works for custom HMMs that carry none and
+    gives a more sensitive search."""
+    evalue = str(getattr(cfg, "HMM_EVALUE", "") or "").strip()
+    return ["-E", evalue] if evalue else [f"--cut_{cutoff_kind(cfg)}"]
+
+
+def uses_ga(cfg) -> bool:
+    """True when the run scores HMMs by a model cutoff line (no HMM_EVALUE set), i.e.
+    when every identifying model must declare that GA/TC/NC cutoff. (Named for the GA
+    default; use cutoff_kind(cfg) for which one.)"""
+    return not str(getattr(cfg, "HMM_EVALUE", "") or "").strip()
+
+
+def custom_hmm_cutoff_error(hmm_path, family: str, cfg) -> str | None:
+    """An explanatory error string if a custom identifying HMM lacks the cutoff line
+    the run needs (the HMM_CUTOFF kind), else None. None also when HMM_EVALUE is set
+    (no cutoff line required). Shared by preflight (logs it) and setup-db (raises)."""
+    if not uses_ga(cfg):
+        return None
+    kind = cutoff_kind(cfg)
+    if has_cutoff_thresholds(hmm_path, kind):
+        return None
+    return (f"custom HMM for '{family}' has no {kind.upper()} ({_CUTOFF_NAMES[kind]}) "
+            f"thresholds: {hmm_path}. {cutoff_help(kind)}")
 
 
 def custom_hmm_ga_error(hmm_path, family: str) -> str | None:
-    """An explanatory error string if a custom identifying HMM lacks GA thresholds,
-    else None. Shared by preflight (logs it) and setup-db (raises it)."""
+    """GA-specific form of custom_hmm_cutoff_error (kept for back-compat)."""
     if has_ga_thresholds(hmm_path):
         return None
     return f"custom HMM for '{family}' has no GA (gathering) thresholds: {hmm_path}. {GA_THRESHOLD_HELP}"
@@ -86,10 +143,11 @@ def run(cfg: Config) -> int:
     external.require("hmmsearch")
 
     domtbl = cfg.result("hmm_domtbl.txt")
-    external.log(f"[{datetime.now()}] Running hmmsearch with --cut_ga...")
+    cutoff = threshold_args(cfg)
+    external.log(f"[{datetime.now()}] Running hmmsearch with {' '.join(map(str, cutoff))}...")
     external.run([
         "hmmsearch",
-        "--cut_ga",
+        *cutoff,                                # --cut_ga (default) or -E <HMM_EVALUE>
         "--noali",                              # the domtbl is parsed; skip the big alignment dump
         "--cpu", cfg.THREADS,
         "--domtblout", domtbl,

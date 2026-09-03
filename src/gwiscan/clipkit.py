@@ -31,9 +31,14 @@ def trimmed_path(aligned):
 def _clipkit_cmd(cfg: Config, aln, out) -> list:
     """ClipKIT command: the input alignment is a positional argument, the cleaned
     alignment is written with -o in the same (FASTA) format, and -m sets the
-    trimming mode (CLIPKIT_MODE, default smart-gap)."""
+    trimming mode (CLIPKIT_MODE, default smart-gap). CLIPKIT_GAPS, when set, passes
+    the gap threshold (-g) the gappy modes use (ClipKIT default 0.9)."""
     mode = str(cfg.CLIPKIT_MODE or "smart-gap").strip()
-    return [cfg.CLIPKIT_BIN, str(aln), "-m", mode, "-o", str(out)]
+    cmd = [cfg.CLIPKIT_BIN, str(aln), "-m", mode, "-o", str(out)]
+    gaps = str(cfg.CLIPKIT_GAPS or "").strip()
+    if gaps:
+        cmd += ["-g", gaps]
+    return cmd
 
 
 def run(cfg: Config) -> None:

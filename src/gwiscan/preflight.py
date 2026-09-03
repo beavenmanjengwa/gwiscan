@@ -64,14 +64,24 @@ def _check_family_reference_files(cfg: Config) -> bool:
                 external.log(f"[MISSING] custom HMM for '{family}' not found: {custom_hmm} "
                              f"(build it and place it in db/hmm/)")
                 missing = True
-            elif r["hmm_press"]:
-                # An identifying custom HMM must carry GA thresholds, or hmmsearch
-                # --cut_ga aborts the whole search. Catch it here rather than mid-run
-                # with HMMER's terse "GA unavailable" error.
-                ga_error = hmm.custom_hmm_ga_error(custom_hmm, family)
-                if ga_error:
-                    external.log(f"[MISSING] {ga_error}")
+            elif r["hmm_press"] and hmm.uses_ga(cfg):
+                # In cutoff mode an identifying custom HMM must carry the chosen cutoff
+                # line (GA/TC/NC), or hmmsearch --cut_<kind> aborts the whole search.
+                # Catch it here rather than mid-run with HMMER's terse "unavailable"
+                # error. When HMM_EVALUE is set the search uses -E, so it is fine.
+                cutoff_error = hmm.custom_hmm_cutoff_error(custom_hmm, family, cfg)
+                if cutoff_error:
+                    external.log(f"[MISSING] {cutoff_error}")
                     missing = True
+
+        # Each InterProModel accession must map to a known InterProScan application
+        # (by its prefix), or the run cannot enable the database that would confirm it.
+        for acc in r["interpro_model"]:
+            if io.application_for(acc) is None:
+                external.log(f"[MISSING] InterProModel accession '{acc}' for family '{family}' "
+                             f"has an unrecognised prefix; use a Pfam (PF...), CDD (cd...) or "
+                             f"PANTHER (PTHR...) accession")
+                missing = True
 
     if not missing:
         external.log(f"[OK] family reference files present ({len(records)} families)")
@@ -157,12 +167,10 @@ def _check_config_values(cfg: Config) -> bool:
     its caster (e.g. non-numeric threads) is caught and reported the same way."""
     checks = [
         ("THREADS", cfg.THREADS, lambda v: int(v) >= 1, "must be an integer >= 1"),
-        ("DIAMOND_IDENTITY", cfg.DIAMOND_IDENTITY, lambda v: 0 <= float(v) <= 100,
-         "must be a percentage between 0 and 100"),
-        ("DIAMOND_COVERAGE_R2", cfg.DIAMOND_COVERAGE_R2, lambda v: 0 <= float(v) <= 100,
-         "must be a percentage between 0 and 100"),
         ("DIAMOND_EVALUE", cfg.DIAMOND_EVALUE, lambda v: float(v) >= 0,
          'must be a non-negative number (e.g. "1e-5")'),
+        ("HMM_EVALUE", cfg.HMM_EVALUE, lambda v: str(v).strip() == "" or float(v) >= 0,
+         'must be empty (use GA thresholds) or a non-negative number (e.g. "1e-5")'),
         ("DIAMOND_BSR", cfg.DIAMOND_BSR, lambda v: 0 <= float(v) <= 1,
          "must be a Blast Score Ratio between 0 and 1"),
         ("CONCORDANCE_MIN", cfg.CONCORDANCE_MIN, lambda v: 0 <= float(v) <= 1,

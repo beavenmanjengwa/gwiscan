@@ -66,6 +66,37 @@ def _clean(value: Any) -> str:
 _PFAM_RE = re.compile(r"^PF\d{4,6}$", re.IGNORECASE)
 
 
+# InterProScan member-database (application) for a signature accession, inferred
+# from its prefix. Users list accession IDs in the InterProModel column and GWIscan
+# enables the matching applications automatically, so no application names are set by
+# hand. Limited to the three databases with a documented use as the confirming model
+# in gene-family surveys: Pfam, CDD, PANTHER.
+_APPL_BY_PREFIX = [
+    ("PTHR", "PANTHER"),
+    ("PF", "Pfam"),
+    ("cd", "CDD"),
+]
+
+
+def application_for(accession) -> str | None:
+    """The InterProScan application a signature accession belongs to, from its
+    prefix: PF -> Pfam, cd -> CDD, PTHR -> PANTHER. None for any other prefix."""
+    acc = str(accession).strip()
+    for prefix, appl in _APPL_BY_PREFIX:
+        if acc[: len(prefix)].lower() == prefix.lower():
+            return appl
+    return None
+
+
+def _accession_list(cell) -> list[str]:
+    """Parse an InterProModel cell into a list of bare (versionless) accessions.
+    Pipe-separated so one family can confirm on any of several IDs; '-'/'' -> []."""
+    raw = _clean(cell)
+    if not raw:
+        return []
+    return [a.split(".")[0].strip() for a in raw.split("|") if a.strip() and a.strip() != "-"]
+
+
 def family_records(path: Path | str) -> list[dict[str, Any]]:
     """Normalised family-table rows — the single source of truth for the schema.
 
@@ -94,6 +125,15 @@ def family_records(path: Path | str) -> list[dict[str, Any]]:
       * ``hmm_press``    — whether ``hmm_file`` is pressed as an identifying model:
                            has an HMM and ``HmmPress`` is not 'no'. (A Pfam kept
                            only for confirmation, like PF00704, sets HmmPress=no.)
+      * ``interpro_model``— accessions from the optional ``InterProModel`` column
+                           (pipe-separated) that confirm a candidate via
+                           InterProScan. One of three databases by prefix:
+                           ``PF...`` (Pfam), ``cd...`` (CDD), ``PTHR...``
+                           (PANTHER). Empty -> confirmation falls back to the
+                           PfamModel accession. Lets families with no usable Pfam
+                           (CRA on ``cd02879``, EUL on ``PTHR31257``) still be
+                           gated, and the run enables the needed applications
+                           automatically (see interpro_applications).
     """
     out = []
     for row in read_family_map(path):
@@ -117,8 +157,43 @@ def family_records(path: Path | str) -> list[dict[str, Any]]:
             "hmm_is_custom": is_custom,
             "blast_model": _clean(row.get("BlastModel")),
             "hmm_press": bool(hmm_file) and press_flag,
+            # InterProScan confirmation accessions (InterProModel column), pipe-
+            # separated; empty when the column is absent -> confirmation falls back
+            # to the PfamModel accession (see family_confirm_accessions).
+            "interpro_model": _accession_list(row.get("InterProModel")),
         })
     return out
+
+
+def family_confirm_accessions(path: Path | str) -> dict[str, set[str]]:
+    """family -> set of bare accessions that confirm it via InterProScan.
+
+    The InterProModel column when given (any of its accessions confirms a
+    candidate, across whichever member databases their prefixes name), otherwise
+    the PfamModel accession. An empty set means the family is not gated on
+    InterProScan (a custom-HMM family, or one with no model at all)."""
+    out: dict[str, set[str]] = {}
+    if not Path(path).exists():
+        return out
+    for r in family_records(path):
+        accs = list(r["interpro_model"])
+        if not accs and r["pfam_model"]:
+            accs = [r["pfam_model"]]
+        out[str(r["family"])] = set(accs)
+    return out
+
+
+def interpro_applications(path: Path | str) -> list[str]:
+    """The InterProScan applications needed to confirm every family, inferred from
+    the confirmation-accession prefixes and unioned across the whole table (one
+    run with -appl <union>, not one run per family). Order-stable."""
+    apps: list[str] = []
+    for accs in family_confirm_accessions(path).values():
+        for acc in sorted(accs):
+            appl = application_for(acc)
+            if appl and appl not in apps:
+                apps.append(appl)
+    return apps
 
 
 def pfam_to_family(path: Path | str) -> dict[str, str]:
@@ -176,6 +251,24 @@ def write_df(df: pd.DataFrame, path: Path | str, fmt: str) -> None:
 def read_tsv(path: Path | str, **kwargs: Any) -> pd.DataFrame:
     """Read a pipeline TSV, normalising camelCase headers back to snake_case."""
     df = pd.read_csv(Path(path), sep="\t", **kwargs)
+    return df.rename(columns=to_snake)
+
+
+def read_interpro_tsv(path: Path | str, **kwargs: Any) -> pd.DataFrame:
+    """Read interproscan.tsv, dropping the leading '#'-comment provenance lines
+    (service / endpoint / client / InterProScan version) that the interpro stage
+    writes above the column header.
+
+    Only whole lines whose first non-space character is '#' are removed, so an
+    inline '#' inside a data field (e.g. a signature description) is preserved —
+    which is why this is used instead of pandas' comment='#', which would also
+    truncate at a mid-field '#'. Data rows begin with the protein id, never '#',
+    so filtering every comment line (not just the contiguous leading block) is
+    safe and simpler."""
+    from io import StringIO
+    with open(Path(path), "r", encoding="utf-8") as fh:
+        body = [ln for ln in fh if not ln.lstrip().startswith("#")]
+    df = pd.read_csv(StringIO("".join(body)), sep="\t", **kwargs)
     return df.rename(columns=to_snake)
 
 

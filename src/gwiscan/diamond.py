@@ -4,15 +4,10 @@
 #                                                                                                     #
 # diamond.py - Two-round DIAMOND BLASTp, run for every family (the `search-diamond` stage).           #
 #                                                                                                     #
-# Round 1: the family's foreign model vs the proteome, DIAMOND_SENSITIVITY, E-value and coverage.      #
-#   * Maximaize sensitivity to pick distant candidates candidates. Round-2 SEEDS are chosen as:       #
-#   * HMM-validated  — round-1 subjects that ALSO pass the family hmmscan (two independent methods    #
-#                      agreeing = confident members, no false-positive seeds to amplify); used        #
-#                      whenever the family has an HMM.                                                #
-#   * Blast Score Ratio (BSR) — fallback for families with no HMM: round-1 subjects whose             #
-#                      bitscore / model self-bitscore >= DIAMOND_BSR (length-normalized membership,   #
-#                      Rasko et al. 2005).                                                            #
-# Round 2: those native seeds vs the proteome (identity + stricter coverage) recover the family.      #
+# Round 1: the family's foreign model vs the proteome, DIAMOND_SENSITIVITY, E-value only.             #
+# Round-2 SEEDS: Blast Score Ratio (BSR) for every family -- round-1 subjects whose                   #
+#   bitscore / model self-bitscore >= DIAMOND_BSR (length-normalized membership, Rasko et al. 2005).  #
+# Round 2: those native seeds vs the proteome (DIAMOND_SENSITIVITY, E-value only) recover the family. #
 #                                                                                                     #
 #######################################################################################################
 """
@@ -72,23 +67,6 @@ def _round(cfg, query, db, out_path, sensitivity=None, identity=None, coverage=N
         return sum(1 for _ in fh)
 
 
-def _round1_subjects(r1_out) -> set:
-    """Unique subject protein ids from a round-1 hit table."""
-    subjects = set()
-    with open(r1_out) as fh:
-        for line in fh:
-            if line.strip():
-                subjects.add(line.split("\t")[_COL["sseqid"]])
-    return subjects
-
-
-def _hmm_validated_seeds(r1_out, hmm_ids) -> list:
-    """Seeds = round-1 subjects that ALSO pass the family HMM (hmmscan). Two
-    independent methods agreeing gives high-confidence members and no false-positive
-    seeds to amplify in round 2."""
-    return sorted(_round1_subjects(r1_out) & set(hmm_ids))
-
-
 def _self_bitscores(cfg, model_fasta, tmp_dir) -> dict:
     """Per-model-sequence self-alignment bitscore, for the Blast Score Ratio."""
     external.require("diamond")
@@ -112,9 +90,9 @@ def _self_bitscores(cfg, model_fasta, tmp_dir) -> dict:
 
 
 def _bsr_seeds(r1_out, self_scores, threshold) -> list:
-    """Seeds for a family with no HMM: round-1 subjects whose Blast Score Ratio
-    (bitscore / the model's self-bitscore) is >= threshold — a length-normalized,
-    absolute membership criterion."""
+    """Round-2 seeds: round-1 subjects whose Blast Score Ratio (bitscore / the
+    model's self-bitscore) is >= threshold — a length-normalized, absolute
+    membership criterion."""
     best = {}
     with open(r1_out) as fh:
         for line in fh:
@@ -156,7 +134,7 @@ def _best_per_member(r2_out) -> dict:
     return best
 
 
-def _process_family(cfg, family, blast_model, proteome_db, tmp_dir, writer, hmm_ids) -> None:
+def _process_family(cfg, family, blast_model, proteome_db, tmp_dir, writer) -> None:
     model_fasta = cfg.blast_dir / blast_model
     if not model_fasta.exists():
         raise FileNotFoundError(f"model FASTA not found for {family}: {model_fasta}")
@@ -171,15 +149,11 @@ def _process_family(cfg, family, blast_model, proteome_db, tmp_dir, writer, hmm_
         external.log(f"[WARN] {family}: no Round 1 hits, skipping Round 2.")
         return
 
-    # Seeds: HMM-validated (round-1 subjects that also pass hmmscan) when the family
-    # has an HMM; otherwise Blast Score Ratio.
-    if hmm_ids:
-        seeds = _hmm_validated_seeds(r1_out, hmm_ids)
-        seed_desc = "HMM-validated"
-    else:
-        self_scores = _self_bitscores(cfg, model_fasta, tmp_dir)
-        seeds = _bsr_seeds(r1_out, self_scores, cfg.DIAMOND_BSR)
-        seed_desc = f"BSR>={cfg.DIAMOND_BSR}"
+    # Seeds: Blast Score Ratio. Round-1 subjects whose bitscore / model self-bitscore
+    # >= DIAMOND_BSR are kept as native seeds for round 2.
+    self_scores = _self_bitscores(cfg, model_fasta, tmp_dir)
+    seeds = _bsr_seeds(r1_out, self_scores, cfg.DIAMOND_BSR)
+    seed_desc = f"BSR>={cfg.DIAMOND_BSR}"
     external.log(f"[OK] {family} Round 1: {len(seeds)} seed sequences ({seed_desc})")
     if not seeds:
         external.log(f"[WARN] {family}: no confident seeds ({seed_desc}); skipping Round 2.")
@@ -190,14 +164,12 @@ def _process_family(cfg, family, blast_model, proteome_db, tmp_dir, writer, hmm_
     seed_fasta = tmp_dir / f"{family}_seeds.fasta"
     _seqkit_extract(seed_ids, cfg.proteome, seed_fasta)
 
-    # Round 2: native seeds vs proteome (identity + stricter coverage).
+    # Round 2: native seeds vs proteome (E-value + sensitivity only).
     external.log(f"[{datetime.now()}] [{family}] Round 2: seeds vs proteome "
-                 f"({cfg.DIAMOND_SENSITIVITY}, id {cfg.DIAMOND_IDENTITY}%, "
-                 f"cover {cfg.DIAMOND_COVERAGE_R2}%)...")
+                 f"({cfg.DIAMOND_SENSITIVITY}, E<={cfg.DIAMOND_EVALUE})...")
     r2_out = cfg.result(f"diamond_{family}_r2.tsv")
     _round(cfg, seed_fasta, proteome_db, r2_out,
-           sensitivity=_sensitivity_flag(cfg),
-           identity=cfg.DIAMOND_IDENTITY, coverage=cfg.DIAMOND_COVERAGE_R2)
+           sensitivity=_sensitivity_flag(cfg))
     # Only the member IDs (+ coords) are needed for blast_hits.tsv; merge extracts
     # the sequences from the proteome downstream, so no FASTA is written here.
     best = _best_per_member(r2_out)
@@ -205,17 +177,6 @@ def _process_family(cfg, family, blast_model, proteome_db, tmp_dir, writer, hmm_
 
     for member, (evalue, bitscore, sstart, send) in sorted(best.items()):
         writer.writerow([member, family, "-", evalue, bitscore, sstart, send, "blast"])
-
-
-def _hmm_hits_by_family(cfg) -> dict:
-    """{family: set(protein_ids)} from intermediate/hmm_hits.tsv (empty if search-hmm
-    has not run). Used to HMM-validate the DIAMOND round-2 seeds."""
-    path = cfg.result("hmm_hits.tsv")
-    if not path.exists():
-        return {}
-    df = io.read_tsv(path)
-    return {str(fam): set(sub["protein_id"].astype(str))
-            for fam, sub in df.groupby("family")}
 
 
 def run(cfg: Config) -> None:
@@ -227,7 +188,6 @@ def run(cfg: Config) -> None:
             f"DIAMOND proteome db not found: {proteome_db}.dmnd (run `gwiscan setup-db` first)"
         )
 
-    hmm_by_family = _hmm_hits_by_family(cfg)
     blast_out = cfg.result("blast_hits.tsv")
     with open(blast_out, "w", newline="") as hits_fh, \
             tempfile.TemporaryDirectory(prefix="gwiscan_diamond_") as tmp:
@@ -239,11 +199,11 @@ def run(cfg: Config) -> None:
             f"[{datetime.now()}] E-value: {cfg.DIAMOND_EVALUE} | "
             f"Sensitivity: {cfg.DIAMOND_SENSITIVITY} (both rounds) | "
             f"Round 1: E-value only | "
-            f"Seeds: HMM-validated, else BSR>={cfg.DIAMOND_BSR} | "
-            f"Round 2: id {cfg.DIAMOND_IDENTITY}%, cover {cfg.DIAMOND_COVERAGE_R2}%"
+            f"Seeds: BSR>={cfg.DIAMOND_BSR} | "
+            f"Round 2: E-value + sensitivity only"
         )
         for r in io.family_records(cfg.family_map):
             _process_family(cfg, r["family"], r["blast_model"], proteome_db,
-                            Path(tmp), writer, hmm_by_family.get(r["family"], set()))
+                            Path(tmp), writer)
 
     external.log(f"[{datetime.now()}] DIAMOND step done.")

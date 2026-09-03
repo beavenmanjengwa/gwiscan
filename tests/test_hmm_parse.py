@@ -154,3 +154,23 @@ def test_custom_hmm_ga_error_none_when_present(tmp_path):
     p = tmp_path / "cra.hmm"
     p.write_text(_HMM_WITH_GA)
     assert hmm.custom_hmm_ga_error(p, "CRA") is None
+
+
+# --- search cutoff: GA thresholds by default, sequence E-value when set -------
+
+def test_threshold_args_defaults_to_cut_ga(tmp_path):
+    cfg = Config(root=tmp_path)
+    assert hmm.threshold_args(cfg) == ["--cut_ga"]
+    assert hmm.uses_ga(cfg) is True
+
+
+def test_threshold_args_uses_evalue_when_set(tmp_path):
+    cfg = Config(root=tmp_path, HMM_EVALUE="1e-5")
+    assert hmm.threshold_args(cfg) == ["-E", "1e-5"]
+    assert hmm.uses_ga(cfg) is False
+
+
+def test_threshold_args_blank_evalue_is_ga(tmp_path):
+    # Whitespace-only / empty means unset, so GA mode.
+    assert hmm.threshold_args(Config(root=tmp_path, HMM_EVALUE="  ")) == ["--cut_ga"]
+    assert hmm.uses_ga(Config(root=tmp_path, HMM_EVALUE="")) is True

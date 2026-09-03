@@ -5,10 +5,9 @@
 # carries the family assignment (family) alongside the ProtParam columns, and
 # for every family with at least MIN_N members produces:
 #   * a faceted boxplot of the selected properties (600 dpi PNG/TIFF + PDF),
-#   * a per-family summary table (N, range, mean, SD),
-#   * the list of values excluded as outliers.
-# The boxplot and the summary are built from the same values (identical Tukey
-# outlier rule), so the figure and the table always agree.
+#   * a per-family summary table (N, range, mean, SD).
+# The boxplot and the summary are built from the same values, so the figure and
+# the table always agree.
 #
 # Any family reaching MIN_N members is included. Set FAMILY_ORDER to fix the
 # top-to-bottom order in the figure.
@@ -29,8 +28,8 @@ setwd(".")
 
 # -- Paths --------------------------------------------------------------------
 # Read the compiled table from the working directory (final_results/). The FIGURES
-# (the boxplot images) go into a figures/ subfolder of final_results/. The stats and
-# outlier TABLES are intermediate working files, so they go to the intermediate
+# (the boxplot images) go into a figures/ subfolder of final_results/. The stats
+# TABLE is an intermediate working file, so it goes to the intermediate
 # directory passed as the first command-line argument (falls back to the cwd).
 results_file <- "gwiscan_results.tsv"   # GWIscan compiled table (family + ProtParam)
 
@@ -44,7 +43,6 @@ out_png  <- file.path(fig_dir, "protparam_boxplots.600dpi.png")
 out_tiff <- file.path(fig_dir, "protparam_boxplots.600dpi.tiff")
 out_pdf  <- file.path(fig_dir, "protparam_boxplots.pdf")
 out_stats    <- file.path(inter_dir, "protparam_stats.csv")
-out_outliers <- file.path(inter_dir, "protparam_outliers.csv")
 
 # -- Settings -----------------------------------------------------------------
 # Grouping column: "family" for families, "multifamily" for the multi-family
@@ -131,31 +129,16 @@ long <- dat %>%
                names_to = "Property", values_to = "Value") %>%
   filter(!is.na(Value))
 
-# Flag Tukey outliers (below Q1 - 1.5*IQR or above Q3 + 1.5*IQR), the same
-# fences the boxplot whiskers use. Not applied to groups with n < MIN_N.
-flagged <- long %>%
-  group_by(Family, Property) %>%
-  mutate(
-    n_group = n(),
-    Q1 = quantile(Value, 0.25, names = FALSE),
-    Q3 = quantile(Value, 0.75, names = FALSE),
-    IQR_val = Q3 - Q1,
-    Outlier = n_group >= MIN_N & (Value < Q1 - 1.5 * IQR_val | Value > Q3 + 1.5 * IQR_val)
-  ) %>%
-  ungroup()
-
-# -- Step 4: Summary statistics on the retained values ------------------------
-stats <- flagged %>%
+# -- Step 4: Summary statistics -----------------------------------------------
+stats <- long %>%
   group_by(Family, Property) %>%
   summarise(
-    N_total    = n(),
-    N_outliers = sum(Outlier),
-    N_used     = sum(!Outlier),
-    Min        = min(Value[!Outlier]),
-    Max        = max(Value[!Outlier]),
-    Mean       = mean(Value[!Outlier]),
-    SD         = sd(Value[!Outlier]),
-    .groups    = "drop"
+    N    = n(),
+    Min  = min(Value),
+    Max  = max(Value),
+    Mean = mean(Value),
+    SD   = sd(Value),
+    .groups = "drop"
   ) %>%
   mutate(
     across(c(Min, Max, Mean, SD), ~ round(.x, 2)),
@@ -164,21 +147,12 @@ stats <- flagged %>%
     Property = factor(Property, levels = names(properties), labels = properties)
   ) %>%
   arrange(Property, Family) %>%
-  select(Property, Family, N_total, N_outliers, N_used, Min, Max, Range, Mean, SD)
+  select(Property, Family, N, Min, Max, Range, Mean, SD)
 
 write.csv(stats, out_stats, row.names = FALSE)
 
-outliers <- flagged %>%
-  filter(Outlier) %>%
-  mutate(Property = factor(Property, levels = names(properties), labels = properties)) %>%
-  select(Property, Family, proteinId, Value) %>%
-  arrange(Property, Family, Value)
-
-write.csv(outliers, out_outliers, row.names = FALSE)
-
 # -- Step 5: Faceted boxplot (600 dpi) ----------------------------------------
-plot_data <- flagged %>%
-  filter(!Outlier) %>%
+plot_data <- long %>%
   mutate(
     Family   = factor(Family, levels = rev(ordered_families)),
     Property = factor(Property, levels = names(properties), labels = properties)
@@ -208,7 +182,6 @@ ggsave(out_png, p, width = 9, height = fig_h, dpi = 600, device = "png")
 ggsave(out_tiff, p, width = 9, height = fig_h, dpi = 600, compression = "lzw", device = "tiff")
 ggsave(out_pdf, p, width = 9, height = fig_h)
 
-cat(sprintf("\nWrote:\n  %s\n  %s\n  %s\n  %s (%d rows)\n  %s (%d excluded values)\n",
-            out_png, out_tiff, out_pdf, out_stats, nrow(stats),
-            out_outliers, nrow(outliers)))
+cat(sprintf("\nWrote:\n  %s\n  %s\n  %s\n  %s (%d rows)\n",
+            out_png, out_tiff, out_pdf, out_stats, nrow(stats)))
 print(as.data.frame(stats))

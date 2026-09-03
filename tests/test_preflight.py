@@ -148,6 +148,20 @@ def test_custom_hmm_with_ga_thresholds_passes(tmp_path):
     assert preflight._check_family_reference_files(cfg) is False
 
 
+def test_custom_hmm_without_ga_ok_in_evalue_mode(tmp_path):
+    # With HMM_EVALUE set the search uses -E instead of --cut_ga, so a custom HMM
+    # that declares no GA line must NOT fail preflight.
+    _project(
+        tmp_path,
+        "Family\tPfamModel\tBlastModel\n"
+        "CRA\tCRA.hmm\tcra.fasta\n",
+    )
+    cfg = Config(root=tmp_path, HMM_EVALUE="1e-5")
+    _touch(cfg, "db/blast/cra.fasta")
+    (cfg.root / "db" / "hmm" / "CRA.hmm").write_text(_HMM_NO_GA)
+    assert preflight._check_family_reference_files(cfg) is False
+
+
 def test_pfam_accession_hmm_not_required_on_disk(tmp_path):
     # A Pfam-accession family's HMM is downloaded by setup-db, so its absence from
     # db/hmm/ must NOT fail preflight -- only the BlastModel FASTA is required.
@@ -186,16 +200,6 @@ def test_config_values_defaults_are_valid(tmp_path):
     assert preflight._check_config_values(Config(root=tmp_path)) is False
 
 
-def test_config_values_identity_out_of_range(tmp_path, capsys):
-    cfg = Config(root=tmp_path, DIAMOND_IDENTITY=300)
-    assert preflight._check_config_values(cfg) is True
-    assert "DIAMOND_IDENTITY" in capsys.readouterr().out
-
-
-def test_config_values_coverage_negative(tmp_path):
-    assert preflight._check_config_values(Config(root=tmp_path, DIAMOND_COVERAGE_R2=-5)) is True
-
-
 def test_config_values_evalue_not_a_number(tmp_path, capsys):
     cfg = Config(root=tmp_path, DIAMOND_EVALUE="1e-5x")
     assert preflight._check_config_values(cfg) is True
@@ -204,6 +208,21 @@ def test_config_values_evalue_not_a_number(tmp_path, capsys):
 
 def test_config_values_evalue_valid_exponent_ok(tmp_path):
     assert preflight._check_config_values(Config(root=tmp_path, DIAMOND_EVALUE="1e-10")) is False
+
+
+def test_config_values_hmm_evalue_empty_is_valid(tmp_path):
+    # Empty = GA mode, the default; must be accepted.
+    assert preflight._check_config_values(Config(root=tmp_path, HMM_EVALUE="")) is False
+
+
+def test_config_values_hmm_evalue_number_ok(tmp_path):
+    assert preflight._check_config_values(Config(root=tmp_path, HMM_EVALUE="1e-5")) is False
+
+
+def test_config_values_hmm_evalue_not_a_number(tmp_path, capsys):
+    cfg = Config(root=tmp_path, HMM_EVALUE="1e-5x")
+    assert preflight._check_config_values(cfg) is True
+    assert "HMM_EVALUE" in capsys.readouterr().out
 
 
 def test_config_values_bsr_above_one(tmp_path):
@@ -232,7 +251,7 @@ def test_config_values_deeptmhmm_mode_invalid(tmp_path):
 
 
 def test_config_values_reports_multiple_problems(tmp_path, capsys):
-    cfg = Config(root=tmp_path, DIAMOND_IDENTITY=300, DIAMOND_BSR=9, THREADS=0)
+    cfg = Config(root=tmp_path, DIAMOND_EVALUE="1e-5x", DIAMOND_BSR=9, THREADS=0)
     assert preflight._check_config_values(cfg) is True
     out = capsys.readouterr().out
-    assert "DIAMOND_IDENTITY" in out and "DIAMOND_BSR" in out and "THREADS" in out
+    assert "DIAMOND_EVALUE" in out and "DIAMOND_BSR" in out and "THREADS" in out
