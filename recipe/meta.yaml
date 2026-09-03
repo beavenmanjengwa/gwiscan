@@ -58,10 +58,9 @@ about:
   license_file: LICENSE
   summary: GWIscan is a pipeline for the genome-wide identification and in silico characterization of gene families.
   description: |
-    GWIscan is a pipeline for the genome-wide identification and in silico characterization of gene families. 
-    It combines homology-based search, profile hidden Markov model search, and InterPro family signatures for 
-    identification. It runs in family, multi-family, or architecture modes, on a single proteome or across 
-    multiple species.
+    GWIscan takes a user-defined gene family, searches a proteome by both BLAST-based homology and profile HMM, 
+    confirms candidates by family signature, and provides detailed in silico annotation. It operates in three modes
+    (family, multi-family, and architecture) and runs on a single proteome or across multiple species.
   dev_url: https://github.com/beavenmanjengwa/gwiscan
 
 extra:
