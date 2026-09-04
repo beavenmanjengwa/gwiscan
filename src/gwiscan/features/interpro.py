@@ -19,7 +19,8 @@
 # job regardless of applications or batch size; a failed v6 chunk is diagnosed and the run stops   #
 # with a clear instruction to rerun with --iprscan-version 5.                                      #
 #                                                                                                  #
-# Runs only on Pfam-accession-family candidates. Writes the combined interproscan.tsv (the file    #
+# Runs only on candidates of InterProScan-gated families (a confirmation accession, from            #
+# InterProModel or the PfamModel fallback). Writes the combined interproscan.tsv (the file          #
 # the pipeline reads; a short '#'-commented provenance block sits above its header), per-member-    #
 # database splits (interproscan.pfam.tsv, interproscan.cdd.tsv), the merged interproscan.gff3,     #
 # and interproscan.manifest.txt (service, endpoint, client, InterProScan version, applications,    #
@@ -371,8 +372,9 @@ def _run_api(cfg: Config, cand_fasta) -> tuple:
             status = _poll(base, job_id)
             external.log(f"[Chunk {i + 1}/{n_chunks}] Final status: {status}")
             # A chunk that does not FINISH leaves its sequences unannotated. The confirm
-            # stage keeps a Pfam family's members only when their Pfam is reported here,
-            # so a missing annotation is indistinguishable from a genuine non-match: the
+            # stage keeps a gated family's members only when their confirmation
+            # accession is reported here, so a missing annotation is indistinguishable
+            # from a genuine non-match: the
             # members would be dropped and the run would still exit 0 with a plausible
             # but incomplete table. Stop with a clear, resumable error instead. (The
             # session already retries transient blips, so reaching here means a real
@@ -576,19 +578,23 @@ def _write_manifest(path, meta) -> None:
 
 
 def pfam_candidate_ids(cfg: Config) -> set:
-    """Protein ids that are candidates of a family identified by a real Pfam
-    accession. Only these are sent to InterProScan; custom-HMM families (hmmscan +
-    BLAST) and BLAST-only families are confirmed by their own search and never
-    touch InterProScan."""
+    """Protein ids that belong to a family InterProScan must confirm: any family with
+    a confirmation accession (io.family_confirm_accessions -- InterProModel, or the
+    PfamModel accession as fallback when InterProModel is absent). This must match
+    confirm.py's gate exactly: a family gated there but never submitted here would
+    have every candidate silently dropped (absent from interproscan.tsv reads as "not
+    confirmed", not "not checked"). Custom-HMM families and families with no model at
+    all have no confirmation accessions and are confirmed by their own search,
+    never touching InterProScan."""
     merged = cfg.result("candidates_merged.tsv")
     if not merged.exists():
         return set()
     df = io.read_tsv(merged)
-    # Architecture mode: every final candidate is annotated (no per-family Pfam gate).
+    # Architecture mode: every final candidate is annotated (no per-family gate).
     if cfg.is_architecture:
         return set(df["protein_id"].astype(str))
-    pfam_families = {r["family"] for r in io.family_records(cfg.family_map) if r["pfam_model"]}
-    return set(df.loc[df["family"].isin(pfam_families), "protein_id"].astype(str))
+    gated_families = {fam for fam, accs in io.family_confirm_accessions(cfg.family_map).items() if accs}
+    return set(df.loc[df["family"].isin(gated_families), "protein_id"].astype(str))
 
 
 def run(cfg: Config) -> None:
@@ -601,13 +607,14 @@ def run(cfg: Config) -> None:
     if not cand_fasta.exists():
         raise FileNotFoundError(f"candidates.fasta not found: {cand_fasta}")
 
-    # Submit only Pfam-accession families; custom-HMM / BLAST-only families skip
-    # InterProScan entirely (they are confirmed by their own hmmscan/BLAST).
+    # Submit only families with a confirmation accession (InterProModel, or PfamModel
+    # as fallback); custom-HMM / no-model families skip InterProScan entirely (they
+    # are confirmed by their own hmmscan/BLAST).
     keep_ids = pfam_candidate_ids(cfg)
     all_records = list(SeqIO.parse(str(cand_fasta), "fasta"))
     records = [r for r in all_records if r.id in keep_ids]
     if not records:
-        external.log("[OK] No Pfam-accession candidates; skipping InterProScan.")
+        external.log("[OK] No InterProScan-gated candidates; skipping InterProScan.")
         _write_outputs([], [], out_tsv, out_gff)
         return
 
