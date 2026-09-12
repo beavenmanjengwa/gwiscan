@@ -3,7 +3,7 @@
 GWIscan is a pipeline for the genome-wide identification and in silico characterization of
 gene families. It combines homology-based search, profile hidden Markov model search, and 
 InterPro family signatures for identification. It runs in family, multi-family, or architecture
-modes, on a single proteome or across multiple species. It provides annotation including gene  
+modes, on a single proteome or across multiple species. It provides annotation including gene 
 coordinates, domain architecture, physicochemical properties, signal peptides and transmembrane 
 topology, subcellular localization, and GO terms. It can also perform multiple sequence alignment,
 MEME motif discovery, and phylogenetic tree construction.
@@ -34,17 +34,13 @@ Either way you get `HMMER`, `diamond`, `seqkit`, `mafft`, `clipkit`, `iqtree`,
 by default (set `EBI_EMAIL`); to run it offline, install InterProScan and set
 `INTERPRO_MODE: local` and `INTERPROSCAN_BIN` if it's not executable at system level.
 
-The EBI web service has two API versions, chosen with `IPRSCAN_VERSION` (config /
+The EBI web service has two API versions, select with `IPRSCAN_VERSION` (config /
 env) or `--iprscan-version {5,6}` (CLI). **Default is `5`**, the stable
 InterProScan 5 service. `6` targets InterProScan 6, whose match-lookup step has a
 known server-side fault that fails every job; if you hit it, GWIscan stops and
-tells you to rerun with `--iprscan-version 5`. The two versions name the same
-databases differently (v5 `PfamA`/`Panther`, v6 `Pfam`/`PANTHER`); GWIscan derives
+tells you to rerun with `--iprscan-version 5`. GWIscan derives
 the applications from the family table and maps them to the chosen version
-automatically, so you never set application names by hand. The InterProScan and
-InterPro release that produced a run are recorded in
-`intermediate/<species>/interproscan/interproscan.manifest.txt`, in the
-`Tool_versions` sheet of `gwiscan_results.xlsx`, and in `provenance.txt`.
+automatically.
 
 [TargetP 2.0](https://services.healthtech.dtu.dk/services/TargetP-2.0/) and
 [DeepLoc 2.1](https://services.healthtech.dtu.dk/services/DeepLoc-2.1/) should be
